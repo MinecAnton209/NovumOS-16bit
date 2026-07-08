@@ -23,6 +23,8 @@ The CPU features a RISC-like hybrid 16/32-bit instruction format, four 16-bit ge
 | Registers | [architecture/registers.md](architecture/registers.md) | Register set, FLAGS layout, encoding |
 | Execution Cycle | [architecture/execution-cycle.md](architecture/execution-cycle.md) | Fetch-decode-execute-writeback pipeline |
 | Memory Map | [architecture/memory-map.md](architecture/memory-map.md) | 64KB address space layout, I/O mapping |
+| **Emulator** | | |
+| Overview | [emulator/overview.md](emulator/overview.md) | Emulator architecture, build/run, test coverage |
 
 ---
 
@@ -43,6 +45,7 @@ The CPU features a RISC-like hybrid 16/32-bit instruction format, four 16-bit ge
 | Clock | TTL crystal oscillator |
 | ISA type | RISC-like |
 | Supported peripherals | PIC 8259, PIT 8254, UART 16550, VGA text |
+| Emulator | Cycle-accurate, 38 tests passing |
 
 ---
 
@@ -52,21 +55,19 @@ The CPU features a RISC-like hybrid 16/32-bit instruction format, four 16-bit ge
 
 | Category | Instructions |
 |----------|-------------|
-| Data movement | `MOV` |
-| Arithmetic | `ADD`, `SUB` |
-| Logic | `AND`, `OR`, `XOR` |
+| Data movement | `MOV` (reg/reg, reg/imm, indirect) |
+| Arithmetic | `ADD`, `SUB`, `INC`, `DEC` |
+| Compare | `CMP`, `TEST` |
+| Logic | `AND`, `OR`, `XOR`, `NOT`, `NEG` |
 | Shift | `SHL`, `SHR` |
-| Control flow | `JMP`, `JZ`, `JNZ` |
+| Exchange | `XCHG` |
+| Add/Sub Carry | `ADC`, `SBB` |
+| Stack | `PUSH`, `POP` |
+| Control flow | `JMP`, `JZ`, `JNZ`, `JC`, `JNC`, `JS`, `JNS` |
+| Subroutine | `CALL`, `RET` |
+| Interrupts | `INT`, `IRET` |
 | I/O | `IN`, `OUT` |
-
-### Recommended Extensions
-
-| Category | Instructions |
-|----------|-------------|
-| Subroutine support | `CALL`, `RET` |
-| Stack operations | `PUSH`, `POP` |
-| Interrupts | `INT` |
-| Halting | `HLT` |
+| System | `NOP`, `HLT` |
 
 ---
 
@@ -132,6 +133,23 @@ graph TB
 - **Minimalism**: RISC-like ISA keeps hardware simple
 - **Practical OS features**: Interrupts, multitasking, device drivers
 - **Documentation-first**: Every layer is thoroughly documented
+
+---
+
+## Project Status
+
+- [x] CPU architecture design
+- [x] ISA definition
+- [x] NAND-ALU design
+- [x] Cycle-accurate CPU emulator (38 tests passing)
+- [x] Firmware generator and build system
+- [ ] Hardware schematic (TTL)
+- [ ] FPGA synthesis / breadboard prototype
+- [ ] Basic VGA driver
+- [ ] Bootloader
+- [ ] OS kernel (monolithic / microkernel)
+- [ ] Task scheduler
+- [ ] File system
 
 ---
 
