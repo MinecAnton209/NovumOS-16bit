@@ -1,6 +1,6 @@
 # Register Set
 
-[← Back to Main](../README.md) | [← Overview](overview.md) | [Execution Cycle →](execution-cycle.md) | [Memory Map →](memory-map.md)
+[← Back to Main](../README.md) | [← Overview](overview.md) | [ISA](isa.md) | [Execution Cycle →](execution-cycle.md) | [Memory Map →](memory-map.md)
 
 ---
 
@@ -213,13 +213,21 @@ Flags are updated **atomically** at the end of each ALU operation:
 |-------------|---|---|---|
 | `ADD` | ✓ Set | ✓ Set | ✓ Set |
 | `SUB` | ✓ Set | ✓ Set | ✓ Set |
-| `AND` | ✓ Set | ✗ Cleared | ✓ Set |
-| `OR` | ✓ Set | ✗ Cleared | ✓ Set |
-| `XOR` | ✓ Set | ✗ Cleared | ✓ Set |
+| `CMP` | ✓ Set | ✓ Set | ✓ Set |
+| `TEST` | ✓ Set | ✗ Cleared | ✗ Cleared |
+| `ADC` | ✓ Set | ✓ Set | ✓ Set |
+| `SBB` | ✓ Set | ✓ Set | ✓ Set |
+| `AND` | ✓ Set | ✗ Cleared | ✗ Cleared |
+| `OR` | ✓ Set | ✗ Cleared | ✗ Cleared |
+| `XOR` | ✓ Set | ✗ Cleared | ✗ Cleared |
 | `SHL` | ✓ Set | Last shifted-out bit | ✓ Set |
 | `SHR` | ✓ Set | Last shifted-out bit | ✓ Set |
+| `INC` | ✓ Set | ✗ Cleared | ✓ Set |
+| `DEC` | ✓ Set | ✗ Cleared | ✓ Set |
+| `NOT` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
+| `NEG` | ✓ Set | ✓ Set | ✓ Set |
+| `XCHG` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
 | `MOV` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
-| `CMP` (if implemented) | ✓ Set | ✓ Set | ✓ Set |
 
 ### Flag Update Logic
 
@@ -286,14 +294,27 @@ This table shows which instructions modify which registers:
 | `MOV dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
 | `ADD dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `SUB dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `CMP dest, src` | — | — | — | — | Auto | — | ✓ |
+| `TEST dest, src` | — | — | — | — | Auto | — | ✓ |
+| `ADC dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `SBB dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `AND dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `OR dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `XOR dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `SHL dest, count` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
 | `SHR dest, count` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `INC dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `DEC dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `NOT dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
+| `NEG dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
+| `XCHG dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
 | `JMP addr` | — | — | — | — | ✓ | — | — |
 | `JZ addr` | — | — | — | — | ✓† | — | — |
 | `JNZ addr` | — | — | — | — | ✓† | — | — |
+| `JC addr` | — | — | — | — | ✓† | — | — |
+| `JNC addr` | — | — | — | — | ✓† | — | — |
+| `JS addr` | — | — | — | — | ✓† | — | — |
+| `JNS addr` | — | — | — | — | ✓† | — | — |
 | `IN dest, port` | ✓* | — | — | ✓ | Auto | — | — |
 | `OUT port, src` | — | — | — | ✓ | Auto | — | — |
 | `PUSH reg` | — | — | — | — | Auto | ✓ | — |

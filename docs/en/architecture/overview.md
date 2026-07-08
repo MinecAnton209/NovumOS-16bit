@@ -1,6 +1,6 @@
 # CPU Architecture Overview
 
-[← Back to Main](../README.md) | [Registers](registers.md) | [Execution Cycle](execution-cycle.md) | [Memory Map](memory-map.md)
+[← Back to Main](../README.md) | [ISA](isa.md) | [Registers](registers.md) | [Execution Cycle](execution-cycle.md) | [Memory Map](memory-map.md)
 
 ---
 
@@ -208,8 +208,11 @@ graph TB
 ```
 
 Each bit slice computes:
-- **Arithmetic**: Full adder sum and carry
-- **Logic**: AND, OR, XOR operations
+- **Arithmetic**: Full adder sum and carry (ADD, SUB, ADC, SBB, INC, DEC, NEG)
+- **Logic**: AND, OR, XOR, NOT operations
+- **Shifts**: SHL, SHR operations
+- **Comparison**: CMP, TEST (flags-only operations)
+- **Exchange**: XCHG (register swap)
 - **Selection**: MUX selects between arithmetic and logic result based on ALU operation code
 
 #### Chaining 4-bit Modules to 16-bit

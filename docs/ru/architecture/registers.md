@@ -8,7 +8,7 @@
 
 | Предыдущий | Текущий | Следующий |
 |------------|---------|-----------|
-| [Обзор](overview.md) | Регистры | [Цикл выполнения](execution-cycle.md) |
+| [Обзор](overview.md) | Регистры | [ISA](isa.md) | [Цикл выполнения](execution-cycle.md) |
 
 ---
 
@@ -141,6 +141,15 @@ block-beta
 | XOR | ✓ | — | ✓ |
 | SHL | ✓ | ✓ | ✓ |
 | SHR | ✓ | ✓ | ✓ |
+| INC | ✓ | — | ✓ |
+| DEC | ✓ | — | ✓ |
+| NOT | — | — | — |
+| NEG | ✓ | ✓ | ✓ |
+| CMP | ✓ | ✓ | ✓ |
+| TEST | ✓ | — | — |
+| ADC | ✓ | ✓ | ✓ |
+| SBB | ✓ | ✓ | ✓ |
+| XCHG | — | — | — |
 | MOV | — | — | — |
 
 **Примечание**: флаг S устанавливается для SUB и логических операций, но не определён для ADD (поведение зависит от реализации).
@@ -170,6 +179,15 @@ block-beta
 | AND reg, reg | AX (неявный) | Любой GPR | AX |
 | OR reg, reg | AX (неявный) | Любой GPR | AX |
 | XOR reg, reg | AX (неявный) | Любой GPR | AX |
+| NOT reg | AX (неявный) | — | AX |
+| NEG reg | AX (неявный) | — | AX |
+| INC reg | — | — | тот же |
+| DEC reg | — | — | тот же |
+| CMP reg, reg | — | Любой GPR | FLAGS |
+| TEST reg, reg | — | Любой GPR | FLAGS |
+| ADC reg, reg | — | Любой GPR | FLAGS |
+| SBB reg, reg | — | Любой GPR | FLAGS |
+| XCHG reg, reg | — | Любой GPR | оба |
 | SHL reg | AX (неявный) | — | AX |
 | SHR reg | AX (неявный) | — | AX |
 
@@ -178,10 +196,14 @@ block-beta
 | Инструкция | Условие | Регистр |
 |------------|---------|---------|
 | JMP addr | Безусловный | — |
-| JZ addr | Z = 1 | FLAGS |
-| JNZ addr | Z = 0 | FLAGS |
+| JZ / JE addr | Z = 1 | FLAGS |
+| JNZ / JNE addr | Z = 0 | FLAGS |
+| JC / JB addr | C = 1 | FLAGS |
+| JNC / JAE addr | C = 0 | FLAGS |
+| JS addr | S = 1 | FLAGS |
+| JNS addr | S = 0 | FLAGS |
 
-### Инструкции стека (рекомендуемые)
+### Инструкции стека
 
 | Инструкция | Регистр | Описание |
 |------------|---------|----------|
