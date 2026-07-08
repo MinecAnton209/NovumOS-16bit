@@ -4,6 +4,10 @@
 const std = @import("std");
 const Io = std.Io;
 
+pub const codegen = @import("codegen.zig");
+pub const ISA = codegen.ISA;
+pub const asm_ = @import("wrappers/asm.zig");
+
 /// Print a help message to the given writer.
 /// Uses Io.Writer for portable I/O (works with files, stdout, stderr, etc.)
 pub fn printAnotherMessage(writer: *Io.Writer) Io.Writer.Error!void {

@@ -25,6 +25,8 @@ The CPU features a RISC-like hybrid 16/32-bit instruction format, four 16-bit ge
 | Memory Map | [architecture/memory-map.md](architecture/memory-map.md) | 64KB address space layout, I/O mapping |
 | **Emulator** | | |
 | Overview | [emulator/overview.md](emulator/overview.md) | Emulator architecture, build/run, test coverage |
+| **Assembly Wrappers** | | |
+| Overview | [wrappers/overview.md](wrappers/overview.md) | High-level Zig API for ISA code generation |
 
 ---
 
@@ -45,7 +47,7 @@ The CPU features a RISC-like hybrid 16/32-bit instruction format, four 16-bit ge
 | Clock | TTL crystal oscillator |
 | ISA type | RISC-like |
 | Supported peripherals | PIC 8259, PIT 8254, UART 16550, VGA text |
-| Emulator | Cycle-accurate, 38 tests passing |
+| Emulator | Cycle-accurate, 38 CPU + 23 wrapper tests passing |
 
 ---
 
@@ -141,8 +143,9 @@ graph TB
 - [x] CPU architecture design
 - [x] ISA definition
 - [x] NAND-ALU design
-- [x] Cycle-accurate CPU emulator (38 tests passing)
+- [x] Cycle-accurate CPU emulator (38 CPU + 23 wrapper tests passing)
 - [x] Firmware generator and build system
+- [x] High-level assembly wrappers (asm.zig)
 - [ ] Hardware schematic (TTL)
 - [ ] FPGA synthesis / breadboard prototype
 - [ ] Basic VGA driver
