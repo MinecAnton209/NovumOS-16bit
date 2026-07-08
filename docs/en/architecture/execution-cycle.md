@@ -71,7 +71,7 @@ graph TB
 | 1.2 | Assert RD | Control unit asserts read strobe (active low) |
 | 1.3 | Wait for data | Memory returns instruction word on data bus |
 | 1.4 | Latch instruction | IR captures the data bus value |
-| 1.5 | Increment IP | IP += 1 (16-bit instruction) or IP += 2 (32-bit instruction) |
+| 1.5 | Increment IP | IP += 2 (16-bit instruction) or IP += 4 (32-bit instruction) |
 
 **Timing:**
 
@@ -278,7 +278,7 @@ gantt
 
 | Cycle | Phase | Description |
 |-------|-------|-------------|
-| 1 | Fetch | Fetch instruction from memory[IP], IP += 1 |
+| 1 | Fetch | Fetch instruction from memory[IP], IP += 2 |
 | 2 | Decode+Execute+Writeback | Decode, ALU compute, write result to AX, update FLAGS |
 
 #### Memory Load (e.g., MOV AX, [BX])
@@ -299,7 +299,7 @@ gantt
 
 | Cycle | Phase | Description |
 |-------|-------|-------------|
-| 1 | Fetch | Fetch instruction from memory[IP], IP += 1 |
+| 1 | Fetch | Fetch instruction from memory[IP], IP += 2 |
 | 2 | Decode + Address | Decode instruction, compute effective address from BX |
 | 3 | Memory + Writeback | Read memory at BX, write result to AX |
 
@@ -319,7 +319,7 @@ gantt
 
 | Cycle | Phase | Description |
 |-------|-------|-------------|
-| 1 | Fetch | Fetch JZ instruction, IP += 1 |
+| 1 | Fetch | Fetch JZ instruction, IP += 2 |
 | 2 | Decode + Execute | Decode, test Z flag, if Z=1 load target into IP |
 
 If Z=0 (not taken), only 1 cycle: fetch, detect condition false, continue.
@@ -334,18 +334,18 @@ The Program Counter automatically advances after each instruction fetch:
 graph TB
     IP["IP"] -->|"Fetch"| FETCH["Fetch Phase"]
     FETCH -->|"16-bit inst"| CHECK{"Instruction<br/>Size?"}
-    CHECK -->|"16-bit"| INC1["IP = IP + 1"]
-    CHECK -->|"32-bit"| INC2["IP = IP + 2"]
+    CHECK -->|"16-bit"| INC1["IP = IP + 2"]
+    CHECK -->|"32-bit"| INC2["IP = IP + 4"]
     INC1 --> NEXT["IP → Next Instruction"]
     INC2 --> NEXT
 ```
 
 | Instruction Format | IP Change | Rationale |
 |--------------------|-----------|-----------|
-| 16-bit (short) | +1 word | Next instruction is 1 word away |
-| 32-bit (long) | +2 words | Instruction occupies 2 words |
+| 16-bit (short) | +2 bytes | Next instruction is 1 word (2 bytes) away |
+| 32-bit (long) | +4 bytes | Instruction occupies 2 words (4 bytes) |
 | Jump (taken) | = target | IP overwritten by target address |
-| Jump (not taken) | +1 or +2 | No change, already incremented |
+| Jump (not taken) | +2 or +4 | No change, already incremented |
 
 **Critical:** IP is incremented during the fetch phase, **before** any jump instruction can modify it. Jump instructions load a new value into IP, overriding the auto-increment.
 

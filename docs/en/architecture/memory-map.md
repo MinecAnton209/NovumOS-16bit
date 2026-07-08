@@ -195,10 +195,10 @@ graph TB
 
 | Operation | SP Change | Memory Access |
 |-----------|-----------|---------------|
-| `PUSH AX` | SP = SP - 1 | word[SP] = AX |
-| `POP AX` | SP = SP + 1 | AX = word[SP] |
-| `CALL subroutine` | SP = SP - 1 | word[SP] = IP (return address) |
-| `RET` | SP = SP + 1 | IP = word[SP] |
+| `PUSH AX` | SP = SP - 2 | word[SP] = AX |
+| `POP AX` | SP = SP + 2 | AX = word[SP] |
+| `CALL subroutine` | SP = SP - 2 | word[SP] = IP (return address) |
+| `RET` | SP = SP + 2 | IP = word[SP] |
 | `INT n` | SP = SP - 2 | word[SP] = FLAGS; word[SP-1] = IP |
 | `IRET` | SP = SP + 2 | IP = word[SP]; FLAGS = word[SP+1] |
 

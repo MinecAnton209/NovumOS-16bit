@@ -114,10 +114,10 @@ graph LR
 
 **Auto-increment behavior:**
 
-| Instruction Format | Bytes | IP Increment |
+| Instruction Format | Words | IP Increment |
 |--------------------|-------|--------------|
-| 16-bit (short) | 1 | IP += 1 |
-| 32-bit (long) | 2 | IP += 2 |
+| 16-bit (short) | 1 | IP += 2 |
+| 32-bit (long) | 2 | IP += 4 |
 
 The IP is **not directly writable** by user instructions. It can only be modified by:
 - Jump instructions (`JMP`, `JZ`, `JNZ`)
@@ -134,18 +134,18 @@ Holds the address of the **top of the stack** in memory.
 |----------|-------|
 | Width | 16-bit |
 | Growth direction | Downward (toward lower addresses) |
-| PUSH | SP = SP - 1; memory[SP] = value |
-| POP | value = memory[SP]; SP = SP + 1 |
-| CALL | Push IP; SP -= 1; IP = target |
-| RET | Pop IP from stack; SP += 1 |
+| PUSH | SP = SP - 2; word[SP] = value |
+| POP | value = word[SP]; SP = SP + 2 |
+| CALL | Push IP; SP -= 2; IP = target |
+| RET | Pop IP from stack; SP += 2 |
 
 ```mermaid
 graph TB
     subgraph Stack["Stack in Memory"]
         direction TB
         HIGH["High Address (initial SP)"]
-        PUSH1["PUSH #1 → SP decreases"]
-        PUSH2["PUSH #2 → SP decreases"]
+        PUSH1["PUSH #1 → SP decreases by 2"]
+        PUSH2["PUSH #2 → SP decreases by 2"]
         TOP["← Current SP"]
     end
     HIGH --> PUSH1 --> PUSH2 --> TOP
@@ -155,10 +155,10 @@ graph TB
 
 | Operation | SP Change | Description |
 |-----------|-----------|-------------|
-| `PUSH reg` | SP = SP - 1 | Store word, decrement SP |
-| `POP reg` | SP = SP + 1 | Load word, increment SP |
-| `CALL` | SP = SP - 1 | Push return address |
-| `RET` | SP = SP + 1 | Pop return address |
+| `PUSH reg` | SP = SP - 2 | Store word (2 bytes), decrement SP |
+| `POP reg` | SP = SP + 2 | Load word (2 bytes), increment SP |
+| `CALL` | SP = SP - 2 | Push return address (2 bytes) |
+| `RET` | SP = SP + 2 | Pop return address (2 bytes) |
 | `INT` | SP = SP - 2 | Push FLAGS + IP |
 | `IRET` | SP = SP + 2 | Pop IP + FLAGS |
 
