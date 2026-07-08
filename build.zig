@@ -55,16 +55,23 @@ pub fn build(b: *std.Build) void {
     run_emulator.step.dependOn(b.getInstallStep());
 
     // =========================================================================
-    // Tests — codegen encoding tests + emulator CPU tests
+    // Tests — codegen encoding tests + emulator CPU tests + disasm tests
     // =========================================================================
 
-    // Codegen tests: verify ISA encoding functions (encode16, encode32, encodeAlu, etc.)
+    // Codegen encoding tests: verify ISA encoding functions (encode16, encode32, encodeAlu, etc.)
     const codegen_tests = b.addTest(.{
-        .root_module = codegen_exe.root_module,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/codegen_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "codegen", .module = codegen_exe.root_module },
+            },
+        }),
     });
     const run_codegen_tests = b.addRunArtifact(codegen_tests);
 
-    // Emulator tests: verify CPU instruction execution (32 tests total)
+    // Emulator CPU tests: verify instruction execution, ALU flags, stack, jumps
     const emulator_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/emulator/test.zig"),
@@ -77,8 +84,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_emulator_tests = b.addRunArtifact(emulator_tests);
 
-    // `zig build test` — run both codegen and emulator test suites
+    // Disassembler tests: verify instruction text decoding
+    const disasm_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/emulator/disasm_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "codegen", .module = codegen_exe.root_module },
+            },
+        }),
+    });
+    const run_disasm_tests = b.addRunArtifact(disasm_tests);
+
+    // `zig build test` — run all test suites
     const test_step = b.step("test", "Run all tests");
     test_step.dependOn(&run_codegen_tests.step);
     test_step.dependOn(&run_emulator_tests.step);
+    test_step.dependOn(&run_disasm_tests.step);
 }
