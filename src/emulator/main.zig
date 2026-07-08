@@ -199,17 +199,20 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("\n", .{});
     }
 
-    // Debug mode or normal execution
-    if (args.debug) {
-        try debugMode(&cpu, args.max_cycles);
-    } else {
-        // Execute firmware
-        const cycles = try cpu.run(args.max_cycles);
+        // Debug mode or normal execution
+        if (args.debug) {
+            try debugMode(&cpu, args.max_cycles);
+        } else {
+            // Execute firmware
+            const cycles = try cpu.run(args.max_cycles);
 
-        if (!args.quiet) {
-            std.debug.print("Executed {d} cycles\n\n", .{cycles});
-            cpu.dumpState();
-        }
+            // Print any UART output
+            cpu.flushUartTx();
+
+            if (!args.quiet) {
+                std.debug.print("\nExecuted {d} cycles\n\n", .{cycles});
+                cpu.dumpState();
+            }
 
         // Dump memory at specific address if requested
         if (args.dump_addr) |start| {

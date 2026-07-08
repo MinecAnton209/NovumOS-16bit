@@ -262,8 +262,8 @@ pub const firmware: [MEM * 4]u8 = generateFirmware();
 ///   0x30: PUSH AX — push to stack
 ///   0x32: POP BX — pop from stack
 ///   0x34: MOV AX, 0x1234 — load test value
-///   0x38: IN AX, 0x00 — read I/O port
-///   0x3C: OUT 0x00, AX — write I/O port
+///   0x38: IN AX, 0x22 — read I/O port 0x22
+///   0x3C: OUT 0x22, AX — write I/O port 0x22
 ///   0x40: MOV AX, 0x00FF — final value check
 ///   0x44: HLT — halt CPU
 fn generateFirmware() [MEM * 4]u8 {
@@ -345,11 +345,11 @@ fn generateFirmware() [MEM * 4]u8 {
     // [0x34] MOV AX, 0x1234 — load test value for IN/OUT
     w32(&b, &i, encode32(.MOV, .AX, 0x1234));
 
-    // [0x38] IN AX, 0x00 — read from I/O port 0 into AX
-    w32(&b, &i, encode32(.IN, .AX, 0x00));
+    // [0x38] IN AX, 0x22 — read from generic I/O port 0x22 into AX
+    w32(&b, &i, encode32(.IN, .AX, 0x0022));
 
-    // [0x3C] OUT 0x00, AX — write AX to I/O port 0
-    w32(&b, &i, encode32(.OUT, .AX, 0x00));
+    // [0x3C] OUT 0x22, AX — write AX to generic I/O port 0x22
+    w32(&b, &i, encode32(.OUT, .AX, 0x0022));
 
     // [0x40] MOV AX, 0x00FF — load 255 into AX (test MOV imm works)
     w32(&b, &i, encode32(.MOV, .AX, 0x00FF));
