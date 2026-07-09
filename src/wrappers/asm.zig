@@ -328,14 +328,14 @@ pub fn pop4(a: ISA.Register, b: ISA.Register, c: ISA.Register, d: ISA.Register) 
 // I/O Output Helpers (UART on port 0x00)
 // =============================================================================
 
-/// OUT_CHAR reg — Write register value to UART 16550 (port 0x3F8)
+/// OUT_CHAR reg — Write register value to UART (port 0x00)
 pub fn out_char(reg: ISA.Register) u32 {
-    return ISA.encode32(.OUT, reg, 0x3F8);
+    return ISA.encode32(.OUT, reg, 0x0000);
 }
 
-/// IN_CHAR reg — Read byte from UART 16550 (port 0x3F8) into register
+/// IN_CHAR reg — Read byte from UART (port 0x00) into register
 pub fn in_char(reg: ISA.Register) u32 {
-    return ISA.encode32(.IN, reg, 0x3F8);
+    return ISA.encode32(.IN, reg, 0x0000);
 }
 
 // =============================================================================

@@ -55,6 +55,38 @@ pub fn build(b: *std.Build) void {
     run_emulator.step.dependOn(b.getInstallStep());
 
     // =========================================================================
+    // Kernel — generates build/kernel.bin from comptime firmware
+    // =========================================================================
+    const kernel_exe = b.addExecutable(.{
+        .name = "kernel_writer",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/kernel_main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "codegen", .module = codegen_exe.root_module },
+            },
+        }),
+    });
+    b.installArtifact(kernel_exe);
+
+    const run_kernel_writer = b.addRunArtifact(kernel_exe);
+    const kernel_step = b.step("kernel", "Generate build/kernel.bin");
+    kernel_step.dependOn(&run_kernel_writer.step);
+    run_kernel_writer.step.dependOn(b.getInstallStep());
+
+    // `zig build run` — build kernel then run in emulator
+    const run_kernel = b.addRunArtifact(emulator_exe);
+    run_kernel.addArg("-f");
+    run_kernel.addArg("build/kernel.bin");
+    run_kernel.addArg("-c");
+    run_kernel.addArg("100000");
+    const run_step = b.step("run", "Run kernel in emulator");
+    run_step.dependOn(&run_kernel.step);
+    run_step.dependOn(&run_kernel_writer.step);
+    run_kernel.step.dependOn(b.getInstallStep());
+
+    // =========================================================================
     // Tests — codegen encoding tests + emulator CPU tests + disasm tests
     // =========================================================================
 

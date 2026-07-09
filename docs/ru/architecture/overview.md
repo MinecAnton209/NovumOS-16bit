@@ -46,9 +46,9 @@ block-beta
     end
 
     block:IO_SEC:2
-        PIC["PIC\n8259"]
-        PIT["PIT\n8254"]
-        UART["UART\n16550"]
+        UART["UART\n(порт 0x00)"]
+        TIMER["Таймер\n(порт 0x01)"]
+        KBD["Клавиатура\n(порт 0x02)"]
         VGA["VGA\ntext 80×25"]
     end
 
@@ -186,15 +186,15 @@ graph TD
     CPU["Процессор"]
     
     subgraph "I/O пространство"
-        PIC["PIC 8259\n0x20–0x21"]
-        PIT["PIT 8254\n0x40–0x43"]
-        UART["UART 16550\n0x3F8–0x3FF"]
+        UART["UART\n(порт 0x00)"]
+        TIMER["Таймер\n(порт 0x01)"]
+        KBD["Клавиатура\n(порт 0x02)"]
         VGA["VGA текст\n0xB800–0xBFFF"]
     end
 
-    CPU -->|IN/OUT| PIC
-    CPU -->|IN/OUT| PIT
     CPU -->|IN/OUT| UART
+    CPU -->|IN/OUT| TIMER
+    CPU -->|IN/OUT| KBD
     CPU -->|IN/OUT| VGA
 ```
 

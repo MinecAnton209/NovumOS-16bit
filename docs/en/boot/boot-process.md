@@ -24,9 +24,6 @@ sequenceDiagram
     participant Reset as Reset Circuit
     participant ROM as ROM / Flash (0x0000)
     participant RAM as RAM (0x0000–0xFFFF)
-    participant PIC as PIC 8259
-    participant PIT as PIT 8254
-    participant VGA as VGA Text Adapter
 
     Power->>Clock: Power stabilization delay
     Clock->>CPU: Clock signal begins (crystal oscillator)
@@ -49,19 +46,6 @@ sequenceDiagram
 
     CPU->>CPU: Jump to kernel entry point
     Note over CPU: IP = kernel entry address
-
-    CPU->>CPU: Initialize PIC 8259
-    CPU->>PIC: OUT commands (ICW1–ICW4)
-    Note over PIC: Interrupt vectors remapped<br/>to OS-defined offsets
-
-    CPU->>CPU: Initialize PIT 8254
-    CPU->>PIT: OUT commands (channel 0, mode 3)
-    Note over PIT: System timer tick<br/>configured (~100 Hz)
-
-    CPU->>CPU: Initialize VGA text mode
-    Note over VGA: Video memory mapped<br/>at 0xB8000<br/>Cursor positioned
-
-    CPU->>CPU: Enable interrupts (STI)
 
     Note over CPU: === OS Running ===
     CPU->>CPU: Enter main loop (HLT / poll / idle)
@@ -217,50 +201,13 @@ The entry point is typically the very first address of the loaded kernel image. 
 
 ---
 
-### Step 6: Kernel — Hardware Initialization
+### Step 6: Kernel — Enter Main Loop
 
-The kernel takes control and begins initializing the hardware peripherals. This must happen in a specific order because some peripherals depend on others.
+The kernel takes control and enters its main loop. Because no peripheral initialization is needed — simple UART at port `0x00` requires no setup — the kernel is immediately operational.
 
-#### 6a. PIC 8259 Initialization (Programmable Interrupt Controller)
+The main loop may:
 
-The kernel sends Initialization Command Words (ICW1–ICW4) to the PIC at its I/O port address. This remaps the hardware interrupt vectors from their default locations (which overlap with CPU exception vectors) to OS-defined offsets. The PIC is configured to work in 8086 mode, with specific IRQ masks set.
-
-#### 6b. PIT 8254 Initialization (Programmable Interval Timer)
-
-The kernel configures PIT Channel 0 to generate periodic timer interrupts at approximately 100 Hz. This provides the system tick for multitasking, sleep timers, and scheduling. The PIT is set to Mode 3 (square wave generator) with the appropriate divisor for the system clock frequency.
-
-#### 6c. VGA Text Mode Initialization
-
-The kernel initializes the VGA text adapter for 80×25 character display. This involves:
-- Setting the video mode (mode 03h for 80×25 text).
-- Clearing the video memory at `0xB8000` (filling with spaces, default attribute).
-- Positioning the hardware cursor at the top-left corner.
-- Optionally setting the cursor shape.
-
-**State at this stage:**
-
-| Register / Signal | Value | Notes |
-|---|---|---|
-| IP | Advancing through init code | In kernel RAM |
-| SP | `0xFFFF` | Stack in use for init calls |
-| AX | Used for I/O port data | OUT instructions to PIC/PIT |
-| BX | Used for port addresses | I/O port constants |
-| CX | Used for loop counters | Init loops |
-| DX | Used for scratch | Temp data |
-| FLAGS | Modified by init operations | Arithmetic, comparisons |
-| PIC | Initialized | IRQ vectors remapped |
-| PIT | Initialized | Timer ticking at ~100 Hz |
-| VGA | Initialized | Text mode active, cursor at (0,0) |
-
----
-
-### Step 7: Kernel — Enable Interrupts and Enter Main Loop
-
-After all hardware is initialized, the kernel executes the `STI` (Set Interrupts) instruction to enable maskable interrupts. From this point forward, the PIC can deliver hardware interrupts to the CPU.
-
-The kernel then enters its main loop. Depending on the OS design, this loop may:
-
-- Execute a `HLT` (Halt) instruction and wait for the next interrupt.
+- Execute a `HLT` (Halt) instruction and wait for an interrupt.
 - Poll for pending work items.
 - Switch to a user-mode process if multitasking is enabled.
 - Display a command prompt or shell.
@@ -274,11 +221,7 @@ The system is now fully operational.
 | IP | Main loop address | HLT / poll / scheduler |
 | SP | `0xFFFF` | Fully operational stack |
 | AX, BX, CX, DX | General purpose | Available for kernel use |
-| FLAGS.IF | 1 | Interrupts enabled |
-| PIC | Active | Delivering hardware IRQs |
-| PIT | Ticking | ~100 Hz system timer |
-| VGA | Displaying | OS output visible |
-| UART | Ready | Serial I/O available |
+| UART | Ready | Serial I/O available at port `0x00` |
 
 ---
 
@@ -293,8 +236,7 @@ The following table summarizes the register state at each major boot stage:
 | SP initialized | `0x0004`+ | `0xFFFF` | scratch | U | U | U | `0x0000` |
 | Kernel copying | varies | `0xFFFF` | src | dst | ctr | tmp | varies |
 | Jump to kernel | kernel addr | `0xFFFF` | leftover | leftover | leftover | leftover | varies |
-| PIC/PIT/VGA init | varies | `0xFFFF` | I/O data | port addr | loops | scratch | varies |
-| Interrupts enabled | main loop | `0xFFFF` | available | available | available | available | IF=1 |
+| OS Running | main loop | `0xFFFF` | available | available | available | available | varies |
 
 `U` = Undefined (power-on random state)
 
@@ -339,8 +281,6 @@ The 64KB address space is divided into logical regions. The exact boundaries are
        │                                         │
 0xFFFF └─────────────────────────────────────────┘
 
-Memory-Mapped I/O (not shown in normal RAM map):
-  0xB8000–0xB8FA0  VGA text mode video memory
 ```
 
 ---
@@ -354,9 +294,7 @@ Memory-Mapped I/O (not shown in normal RAM map):
 | SP corruption | Bootloader SP init code faulty | Stack operations crash, interrupt handling fails |
 | Kernel copy incomplete | Loop counter wrong, ROM too small | Partial kernel in RAM, crash on jump |
 | Kernel crash on entry | Wrong entry point address | CPU jumps to garbage, undefined behavior |
-| PIC init failure | Wrong I/O port, wrong ICW sequence | Interrupts not delivered, timer not working |
-| PIT init failure | Wrong divisor, wrong mode | No timer ticks, multitasking fails |
-| VGA init failure | Wrong video mode, wrong memory address | No display output, blank or garbled screen |
+
 
 ---
 

@@ -443,17 +443,15 @@ The `WAIT` input to the CPU extends the current cycle until the device is ready.
 
 ## Interrupt-Driven Cycle Extension
 
-When an interrupt is received (after the current instruction completes):
+When an interrupt is received via the `INT` instruction (after the current instruction completes):
 
 ```mermaid
 sequenceDiagram
     participant CPU as CPU
-    participant PIC as PIC 8259
     participant STACK as Stack Memory
 
+    Note over CPU: INT instruction executed
     Note over CPU: Current instruction completes
-    CPU->>PIC: Check INT line
-    PIC->>CPU: INT asserted (priority level N)
     
     Note over CPU: Begin interrupt sequence
     CPU->>STACK: Push FLAGS (SP -= 1)
@@ -466,13 +464,12 @@ sequenceDiagram
     Note over CPU: ISR ends with IRET
     CPU->>CPU: Pop IP (SP += 1)
     CPU->>CPU: Pop FLAGS (SP += 1)
-    CPU->>PIC: Send EOI
 ```
 
 | Step | Action | Cycles |
 |------|--------|--------|
 | 1 | Complete current instruction | varies |
-| 2 | Assert INT recognized | 1 |
+| 2 | INT recognized | 1 |
 | 3 | Push FLAGS to stack | 1 |
 | 4 | Push IP to stack | 1 |
 | 5 | Load IP from vector table | 1 |

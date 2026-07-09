@@ -75,8 +75,7 @@ pub const Disassembler = struct {
         const raw32: u32 = @as(u32, lo16) | (@as(u32, hi16) << 16);
 
         const hi_mode: u2 = @intCast((raw32 >> 24) & 0x3);
-        const hi_opcode: u4 = @intCast((raw32 >> 28) & 0xF);
-        const is_32bit = hi_mode == 0b01 and hi_opcode == @intFromEnum(ISA.Opcode.MOV);
+        const is_32bit = hi_mode == 0b01;
         const opcode_raw: u4 = if (is_32bit) @intCast((raw32 >> 28) & 0xF) else @intCast((lo16 >> 12) & 0xF);
         const opcode: ISA.Opcode = @enumFromInt(opcode_raw);
 

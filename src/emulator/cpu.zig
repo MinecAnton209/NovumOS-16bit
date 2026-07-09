@@ -51,57 +51,19 @@ pub const CPU = struct {
     /// Cycle counter — incremented each step(), acts as a simple timer.
     cycle_count: u32 = 0,
 
-    // --- UART 16550 (ports 0x3F8-0x3FF) ---
+    // --- UART (port 0x00) — simple terminal I/O ---
 
-    /// UART transmit buffer (COM1).
+    /// UART transmit buffer (output to terminal).
     uart_tx: [256]u8 = std.mem.zeroes([256]u8),
     uart_tx_head: u8 = 0,
     uart_tx_tail: u8 = 0,
 
-    /// UART receive buffer (COM1).
+    /// UART receive buffer (input from terminal).
     uart_rx: [256]u8 = std.mem.zeroes([256]u8),
     uart_rx_head: u8 = 0,
     uart_rx_tail: u8 = 0,
 
-    /// UART Line Status Register (port 0x3FD).
-    /// Bit 0: Data Ready, Bit 5: TX Holding Register Empty.
-    uart_lsr: u8 = 0x60, // TX empty + THR empty on init
-
-    /// UART Interrupt Enable Register (port 0x3F9).
-    uart_ier: u8 = 0,
-
-    /// UART Line Control Register (port 0x3FB).
-    uart_lcr: u8 = 0,
-
-    /// UART Modem Control Register (port 0x3FC).
-    uart_mcr: u8 = 0,
-
-    /// UART scratch register (port 0x3F8, DLAB=1).
-    uart_scr: u8 = 0,
-
-    // --- PIT 8254 (ports 0x40-0x43) ---
-
-    /// PIT channel 0 counter (system clock tick).
-    pit_ch0: u16 = 0xFFFF,
-    /// PIT channel 1 counter (DRAM refresh).
-    pit_ch1: u16 = 0xFFFF,
-    /// PIT channel 2 counter (PC speaker).
-    pit_ch2: u16 = 0xFFFF,
-    /// PIT mode register (port 0x43).
-    pit_mode: u8 = 0,
-
-    // --- PIC 8259 (ports 0x20-0x21) ---
-
-    /// PIC Interrupt Request Register (IRR).
-    pic_irr: u8 = 0,
-    /// PIC In-Service Register (ISR).
-    pic_isr: u8 = 0,
-    /// PIC Interrupt Mask Register (IMR).
-    pic_imr: u8 = 0xFF, // All interrupts masked on init
-    /// PIC command register (port 0x20).
-    pic_cmd: u8 = 0,
-    /// PIC interrupt pending flag.
-    pic_pending: bool = false,
+    // --- Keyboard (port 0x02) ---
 
     /// Keyboard scan code buffer.
     kbd_buffer: [256]u8 = std.mem.zeroes([256]u8),
@@ -112,22 +74,11 @@ pub const CPU = struct {
     // I/O Port Map
     // =========================================================================
     //
-    // Port      | Peripheral | Direction | Description
-    // ----------+------------+-----------+----------------------------------
-    // 0x20      | PIC 8259   | R/W       | PIC command/ICW1/OCW2/OCW3
-    // 0x21      | PIC 8259   | R/W       | PIC data/ICW2-4/OCW1 (IMR)
-    // 0x3F8     | UART 16550 | R/W       | TX/RX data (DLAB=0)
-    // 0x3F9     | UART 16550 | R/W       | Interrupt Enable Register
-    // 0x3FA     | UART 16550 | Read      | Interrupt Identification Register
-    // 0x3FB     | UART 16550 | R/W       | Line Control Register
-    // 0x3FC     | UART 16550 | R/W       | Modem Control Register
-    // 0x3FD     | UART 16550 | Read      | Line Status Register
-    // 0x3FE     | UART 16550 | Read      | Modem Status Register
-    // 0x3FF     | UART 16550 | R/W       | Scratch Register
-    // 0x40      | PIT 8254   | R/W       | Channel 0 counter
-    // 0x41      | PIT 8254   | R/W       | Channel 1 counter
-    // 0x42      | PIT 8254   | R/W       | Channel 2 counter
-    // 0x43      | PIT 8254   | Write     | Mode/Command register
+    // Port | Peripheral | Direction | Description
+    // -----+------------+-----------+----------------------------------
+    // 0x00 | UART       | R/W       | Terminal I/O (IN=rx, OUT=tx)
+    // 0x01 | Timer      | Read      | Cycle counter (low 16 bits)
+    // 0x02 | Keyboard   | Read      | Scan code (0 if empty)
 
     // =========================================================================
     // Flag Bitmasks
@@ -310,37 +261,22 @@ pub const CPU = struct {
     /// Routes to special peripheral ports or generic io_ports[].
     pub fn readPort(self: *CPU, port: u16) u16 {
         return switch (port) {
-            // --- PIC 8259 (ports 0x20-0x21) ---
-            0x20 => self.picReadCmd(),
-            0x21 => self.picReadData(),
+            // --- UART (port 0x00) — read char from terminal input buffer ---
+            0x00 => if (self.uart_rx_head != self.uart_rx_tail) blk: {
+                const ch = self.uart_rx[self.uart_rx_tail];
+                self.uart_rx_tail +%= 1;
+                break :blk @intCast(ch);
+            } else 0,
 
-            // --- UART 16550 (ports 0x3F8-0x3FF) ---
-            0x3F8 => if (self.uart_lcr & 0x80 != 0) self.uart_scr else self.uartReadData(),
-            0x3F9 => self.uart_ier,
-            0x3FA => self.uartReadIIR(),
-            0x3FB => self.uart_lcr,
-            0x3FC => self.uart_mcr,
-            0x3FD => self.uartReadLSR(),
-            0x3FE => 0, // Modem Status Register (simplified)
-            0x3FF => self.uart_scr,
+            // --- Timer (port 0x01) — read current tick counter ---
+            0x01 => @truncate(self.cycle_count & 0xFFFF),
 
-            // --- PIT 8254 (ports 0x40-0x43) ---
-            0x40 => @intCast(self.pit_ch0 & 0xFF),
-            0x41 => @intCast(self.pit_ch1 & 0xFF),
-            0x42 => @intCast(self.pit_ch2 & 0xFF),
-            0x43 => self.pit_mode,
-
-            // --- Keyboard (port 0x60) ---
-            0x60 => if (self.kbd_head != self.kbd_tail) blk: {
+            // --- Keyboard (port 0x02) — read scan code ---
+            0x02 => if (self.kbd_head != self.kbd_tail) blk: {
                 const scancode = self.kbd_buffer[self.kbd_tail];
                 self.kbd_tail +%= 1;
                 break :blk @intCast(scancode);
             } else 0,
-            0x64 => if (self.kbd_head != self.kbd_tail) @as(u16, 1) else @as(u16, 0),
-
-            // --- Legacy ports (backward compatibility) ---
-            0x10 => @truncate(self.cycle_count & 0xFFFF),
-            0x11 => @truncate((self.cycle_count >> 16) & 0xFFFF),
 
             // Generic I/O port (0-255)
             else => if (port <= 0xFF) self.io_ports[port] else 0,
@@ -351,36 +287,10 @@ pub const CPU = struct {
     /// Routes to special peripheral ports or generic io_ports[].
     pub fn writePort(self: *CPU, port: u16, value: u16) void {
         switch (port) {
-            // --- PIC 8259 (ports 0x20-0x21) ---
-            0x20 => self.picWriteCmd(@intCast(value & 0xFF)),
-            0x21 => self.picWriteData(@intCast(value & 0xFF)),
+            // --- UART (port 0x00) — write char to terminal output buffer ---
+            0x00 => self.uartWriteData(@intCast(value & 0xFF)),
 
-            // --- UART 16550 (ports 0x3F8-0x3FF) ---
-            0x3F8 => {
-                if (self.uart_lcr & 0x80 != 0) {
-                    self.uart_scr = @intCast(value & 0xFF);
-                } else {
-                    self.uartWriteData(@intCast(value & 0xFF));
-                }
-            },
-            0x3F9 => self.uart_ier = @intCast(value & 0xFF),
-            0x3FB => self.uart_lcr = @intCast(value & 0xFF),
-            0x3FC => self.uart_mcr = @intCast(value & 0xFF),
-            0x3FF => self.uart_scr = @intCast(value & 0xFF),
-
-            // --- PIT 8254 (ports 0x40-0x43) ---
-            0x40 => self.pitWriteCh0(@intCast(value & 0xFFFF)),
-            0x41 => self.pitWriteCh1(@intCast(value & 0xFFFF)),
-            0x42 => self.pitWriteCh2(@intCast(value & 0xFFFF)),
-            0x43 => self.pitWriteMode(@intCast(value & 0xFF)),
-
-            // --- Keyboard (port 0x60-0x64) ---
-            0x60 => {}, // Keyboard command (ignored)
-            0x64 => {}, // Keyboard command byte (ignored)
-
-            // --- Legacy ports (backward compatibility) ---
-            0x10 => self.cycle_count = (self.cycle_count & 0xFFFF0000) | @as(u32, value),
-            0x11 => self.cycle_count = (self.cycle_count & 0x0000FFFF) | (@as(u32, value) << 16),
+            // Timer and Keyboard are read-only — writes ignored
 
             // Generic I/O port (0-255)
             else => {
@@ -392,111 +302,13 @@ pub const CPU = struct {
     // =========================================================================
     // UART 16550 Helper Functions
     // =========================================================================
+    // UART Helper Functions
+    // =========================================================================
 
     /// Write a byte to UART transmit buffer.
     fn uartWriteData(self: *CPU, byte: u8) void {
         self.uart_tx[self.uart_tx_head] = byte;
         self.uart_tx_head +%= 1;
-    }
-
-    /// Read a byte from UART receive buffer.
-    fn uartReadData(self: *CPU) u16 {
-        if (self.uart_rx_head != self.uart_rx_tail) {
-            const byte = self.uart_rx[self.uart_rx_tail];
-            self.uart_rx_tail +%= 1;
-            return @intCast(byte);
-        }
-        return 0;
-    }
-
-    /// Read UART Interrupt Identification Register.
-    fn uartReadIIR(self: *CPU) u16 {
-        // Bit 0: 0=interrupt pending, 1=no interrupt
-        // Bits 1-3: interrupt ID
-        if (self.uart_rx_head != self.uart_rx_tail) {
-            return 0x04; // Receiver data ready
-        }
-        return 0x01; // No interrupt pending
-    }
-
-    /// Read UART Line Status Register.
-    fn uartReadLSR(self: *CPU) u16 {
-        var lsr: u8 = 0x60; // Bit 5: THR empty, Bit 6: Transmitter empty
-        if (self.uart_rx_head != self.uart_rx_tail) {
-            lsr |= 0x01; // Bit 0: Data Ready
-        }
-        return @intCast(lsr);
-    }
-
-    // =========================================================================
-    // PIT 8254 Helper Functions
-    // =========================================================================
-
-    /// Write to PIT Channel 0 (system clock).
-    fn pitWriteCh0(self: *CPU, value: u16) void {
-        self.pit_ch0 = value;
-    }
-
-    /// Write to PIT Channel 1 (DRAM refresh).
-    fn pitWriteCh1(self: *CPU, value: u16) void {
-        self.pit_ch1 = value;
-    }
-
-    /// Write to PIT Channel 2 (PC speaker).
-    fn pitWriteCh2(self: *CPU, value: u16) void {
-        self.pit_ch2 = value;
-    }
-
-    /// Write to PIT Mode/Command register.
-    fn pitWriteMode(self: *CPU, mode: u8) void {
-        self.pit_mode = mode;
-    }
-
-    // =========================================================================
-    // PIC 8259 Helper Functions
-    // =========================================================================
-
-    /// Read PIC command register.
-    fn picReadCmd(self: *CPU) u16 {
-        return @intCast(self.pic_isr);
-    }
-
-    /// Read PIC data register (IMR).
-    fn picReadData(self: *CPU) u16 {
-        return @intCast(self.pic_imr);
-    }
-
-    /// Write PIC command register.
-    fn picWriteCmd(self: *CPU, cmd: u8) void {
-        self.pic_cmd = cmd;
-        // ICW1: bit 4=1 means initialization sequence
-        if (cmd & 0x10 != 0) {
-            self.pic_imr = 0xFF; // Mask all during init
-        }
-        // EOI (End of Interrupt) — OCW2, bit 5
-        if (cmd & 0x20 != 0) {
-            self.pic_isr = 0;
-            self.pic_pending = false;
-        }
-    }
-
-    /// Write PIC data register (IMR).
-    fn picWriteData(self: *CPU, data: u8) void {
-        self.pic_imr = data;
-    }
-
-    /// Request an IRQ on the PIC.
-    pub fn requestIrq(self: *CPU, irq: u3) void {
-        if (irq < 8) {
-            self.pic_irr |= @as(u8, 1) << irq;
-            self.picUpdatePending();
-        }
-    }
-
-    /// Update PIC pending state based on IRR, ISR, and IMR.
-    pub fn picUpdatePending(self: *CPU) void {
-        const pending = self.pic_irr & ~self.pic_imr & ~self.pic_isr;
-        self.pic_pending = pending != 0;
     }
 
     // =========================================================================

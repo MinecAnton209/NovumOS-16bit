@@ -45,14 +45,14 @@ The CPU begins execution at address `0x0000` after reset. The first instruction 
 | 1 | 0x0008 | Debug |
 | 2 | 0x000C | NMI |
 | 3 | 0x0010 | Breakpoint |
-| 8 | 0x0024 | IRQ 0 (PIT Timer) |
-| 9 | 0x0028 | IRQ 1 (Keyboard) |
-| 10 | 0x002C | IRQ 2 (Cascade) |
-| 11 | 0x0030 | IRQ 3 (Serial COM2) |
-| 12 | 0x0034 | IRQ 4 (Serial COM1) |
-| 13 | 0x0038 | IRQ 5 (Reserved) |
-| 14 | 0x003C | IRQ 6 (Floppy) |
-| 15 | 0x0040 | IRQ 7 (Parallel/Cascade) |
+| 8 | 0x0024 | Timer interrupt |
+| 9 | 0x0028 | Keyboard interrupt |
+| 10 | 0x002C | Reserved |
+| 11 | 0x0030 | Reserved |
+| 12 | 0x0034 | Reserved |
+| 13 | 0x0038 | Reserved |
+| 14 | 0x003C | Reserved |
+| 15 | 0x0040 | Reserved |
 
 Each vector entry contains:
 - Bytes 0–1: New IP value (target address of ISR)
@@ -251,74 +251,32 @@ graph TB
 
 ## I/O Port Map
 
-The CPU uses **isolated I/O** (separate address space) for standard PC peripherals. I/O ports are accessed via `IN` and `OUT` instructions.
+The CPU uses **isolated I/O** (separate address space) for peripherals. I/O ports are accessed via `IN` and `OUT` instructions.
 
 ### Peripheral Port Allocation
 
 ```mermaid
 graph TB
     subgraph IOPortMap["I/O Port Address Space (8-bit, 0x00–0xFF)"]
-        subgraph PIC["PIC 8259"]
-            PIC_A["0x20 — Command"]
-            PIC_D["0x21 — Data"]
+        subgraph UART["UART (port 0x00)"]
+            UART_D["0x00 — Data (terminal I/O)"]
         end
-        subgraph PIT["PIT 8254"]
-            PIT_0["0x40 — Channel 0"]
-            PIT_1["0x41 — Channel 1"]
-            PIT_2["0x42 — Channel 2"]
-            PIT_C["0x43 — Command"]
+        subgraph TIMER["Timer (port 0x01)"]
+            TIMER_D["0x01 — Cycle counter"]
         end
-        subgraph UART["UART 16550"]
-            UART_D["0x3F8 — Data (RBR/THR)"]
-            UART_IER["0x3F9 — Interrupt Enable"]
-            UART_FCR["0x3FA — FIFO Control"]
-            UART_LCR["0x3FB — Line Control"]
-            UART_MCR["0x3FC — Modem Control"]
-            UART_LSR["0x3FD — Line Status"]
-            UART_MSR["0x3FE — Modem Status"]
-            UART_SCR["0x3FF — Scratch"]
-        end
-        subgraph KBD["Keyboard Controller"]
-            KBD_D["0x60 — Data"]
-            KBD_C["0x64 — Command/Status"]
-        end
-        subgraph CMOS["CMOS/RTC"]
-            CMOS_A["0x70 — Address"]
-            CMOS_D["0x71 — Data"]
+        subgraph KBD["Keyboard (port 0x02)"]
+            KBD_D["0x02 — Scan codes"]
         end
     end
 ```
 
 ### Detailed Port Table
 
-| Port(s) | Device | Register | R/W | Description |
-|---------|--------|----------|-----|-------------|
-| **PIC 8259** | | | | |
-| 0x20 | PIC | ICW1, OCW2/3 | W/R | Command register |
-| 0x21 | PIC | ICW2-4, OCW1 | W/R | Data register (mask) |
-| **PIT 8254** | | | | |
-| 0x40 | PIT | Channel 0 | R/W | System timer (IRQ 0) |
-| 0x41 | PIT | Channel 1 | R/W | Refresh timer (hardware) |
-| 0x42 | PIT | Channel 2 | R/W | Speaker tone |
-| 0x43 | PIT | Command | W/R | Control word register |
-| **UART 16550** | | | | |
-| 0x3F8 | UART | RBR/THR | R/W | Receive/Transmit buffer |
-| 0x3F9 | UART | IER | R/W | Interrupt enable register |
-| 0x3FA | UART | IIR/FCR | R/W | Interrupt ID / FIFO control |
-| 0x3FB | UART | LCR | R/W | Line control (baud, parity, stop) |
-| 0x3FC | UART | MCR | R/W | Modem control (DTR, RTS) |
-| 0x3FD | UART | LSR | R | Line status (data ready, errors) |
-| 0x3FE | UART | MSR | R | Modem status (CTS, DSR, etc.) |
-| 0x3FF | UART | SCR | R/W | Scratch register |
-| **Keyboard** | | | | |
-| 0x60 | KBD | Data | R | Scancode read |
-| 0x64 | KBD | Status | R | Controller status |
-| 0x64 | KBD | Command | W | Controller command |
-| **CMOS/RTC** | | | | |
-| 0x70 | RTC | Address | W | Register address select |
-| 0x71 | RTC | Data | R/W | Register data access |
-| **Speaker** | | | | |
-| 0x61 | SPEAKER | Control | R/W | Gate/counter control |
+| Port | Device | Register | R/W | Description |
+|------|--------|----------|-----|-------------|
+| 0x00 | UART | Data | R/W | Terminal I/O (send/receive characters) |
+| 0x01 | Timer | Counter | R/W | Cycle counter |
+| 0x02 | Keyboard | Scan code | R | Keyboard scan codes |
 
 ---
 

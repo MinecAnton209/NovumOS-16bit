@@ -113,11 +113,10 @@ test "encode32 IN AX, 0x0022" {
     try std.testing.expectEqual(@as(u32, 0x81002200), inst);
 }
 
-test "encode32 OUT 0x03F8, AX" {
-    // opcode=OUT(9), dst=AX(0), mode=01, imm=0x03F8
-    // 1001 00 01 00000011 11111000 00000000 = 0x9103F800
-    const inst = encode32(.OUT, .AX, 0x03F8);
-    try std.testing.expectEqual(@as(u32, 0x9103F800), inst);
+test "encode32 OUT 0x0000, AX" {
+    // opcode=OUT(9), dst=AX(0), mode=01, imm=0x0000
+    const inst = encode32(.OUT, .AX, 0x0000);
+    try std.testing.expectEqual(@as(u32, 0x91000000), inst);
 }
 
 test "encode32 bit positions" {

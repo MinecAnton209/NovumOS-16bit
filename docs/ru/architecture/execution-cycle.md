@@ -91,21 +91,63 @@ sequenceDiagram
 
 #### 16-битный формат ( register-register )
 
+```mermaid
+block-beta
+    columns 12
+    block:opcode:8
+        columns 8
+        O7["bit 7"] O6["bit 6"] O5["bit 5"] O4["bit 4"]
+        O3["bit 3"] O2["bit 2"] O1["bit 1"] O0["bit 0"]
+    end
+    block:reg:2
+        columns 2
+        R1["bit 1"] R0["bit 0"]
+    end
+    block:rm:2
+        columns 2
+        M1["bit 1"] M0["bit 0"]
+    end
 ```
-┌─────────┬─────┬─────┐
-│ opcode  │ reg │ r/m │
-│ 8 бит   │ 2   │ 2   │
-└─────────┴─────┴─────┘
-```
+
+| Поле | Биты | Описание |
+|------|------|----------|
+| `opcode` | 8 бит | Код операции |
+| `reg` | 2 бита | Номер регистра |
+| `r/m` | 2 бита | Режим адресации |
 
 #### 32-битный формат ( register-immediate или register-memory )
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:8
+        columns 8
+        O7["bit 7"] O6["bit 6"] O5["bit 5"] O4["bit 4"]
+        O3["bit 3"] O2["bit 2"] O1["bit 1"] O0["bit 0"]
+    end
+    block:reg:2
+        columns 2
+        R1["bit 1"] R0["bit 0"]
+    end
+    block:rm:2
+        columns 2
+        M1["bit 1"] M0["bit 0"]
+    end
+    block:operand:16
+        columns 16
+        I15["bit 15"] I14["bit 14"] I13["bit 13"] I12["bit 12"]
+        I11["bit 11"] I10["bit 10"] I9["bit 9"] I8["bit 8"]
+        I7["bit 7"] I6["bit 6"] I5["bit 5"] I4["bit 4"]
+        I3["bit 3"] I2["bit 2"] I1["bit 1"] I0["bit 0"]
+    end
 ```
-┌─────────┬─────┬─────┬──────────────┐
-│ opcode  │ reg │ r/m │   operand    │
-│ 8 бит   │ 2   │ 2   │ 16 бит       │
-└─────────┴─────┴─────┴──────────────┘
-```
+
+| Поле | Биты | Описание |
+|------|------|----------|
+| `opcode` | 8 бит | Код операции |
+| `reg` | 2 бита | Номер регистра |
+| `r/m` | 2 бита | Режим адресации |
+| `operand` | 16 бит | Непосредственное значение / адрес |
 
 ### Временные характеристики
 

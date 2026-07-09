@@ -452,161 +452,15 @@ test "IN/OUT" {
 }
 
 // =============================================================================
-// PIC 8259 Tests (ports 0x20-0x21)
+// UART Simple Tests (port 0x00)
 // =============================================================================
 
-// Write EOI command to PIC command register (0x20).
-test "PIC: write EOI command" {
-    var cpu = CPU{};
-    cpu.pic_isr = 0x04; // IRQ2 pending in ISR
-    cpu.pic_pending = true;
-
-    // OUT 0x20, 0x20 — EOI command (bit 5 set)
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0020));
-    cpu.ax = 0x0020; // EOI = 0x20
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0), cpu.pic_isr);
-    try std.testing.expectEqual(false, cpu.pic_pending);
-}
-
-// Write IMR to PIC data register (0x21).
-test "PIC: write IMR" {
-    var cpu = CPU{};
-
-    // OUT 0x21, 0xFD — mask all except IRQ0
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0021));
-    cpu.ax = 0x00FD;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0xFD), cpu.pic_imr);
-}
-
-// Read IMR from PIC data register (0x21).
-test "PIC: read IMR" {
-    var cpu = CPU{};
-    cpu.pic_imr = 0xF1; // Mask IRQ1,4-7
-
-    // IN AX, 0x21 — read IMR
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0021));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0xF1), cpu.ax);
-}
-
-// Request IRQ and check pending state.
-test "PIC: IRQ request" {
-    var cpu = CPU{};
-    cpu.pic_imr = 0xFC; // Mask IRQ2-7, allow IRQ0-1
-
-    cpu.requestIrq(0); // Request IRQ0
-    try std.testing.expectEqual(true, cpu.pic_pending);
-    try std.testing.expectEqual(@as(u8, 0x01), cpu.pic_irr);
-
-    cpu.requestIrq(1); // Request IRQ1
-    try std.testing.expectEqual(@as(u8, 0x03), cpu.pic_irr);
-
-    // Mask IRQ0 — should still be pending (IRQ1 unmasked)
-    cpu.pic_imr = 0xFE; // Mask IRQ0 only
-    cpu.picUpdatePending();
-    try std.testing.expectEqual(true, cpu.pic_pending);
-}
-
-// IRQ masked — should not trigger pending.
-test "PIC: masked IRQ" {
-    var cpu = CPU{};
-    cpu.pic_imr = 0xFF; // All masked
-
-    cpu.requestIrq(0);
-    try std.testing.expectEqual(false, cpu.pic_pending);
-    try std.testing.expectEqual(@as(u8, 0x01), cpu.pic_irr); // IRR still set
-}
-
-// ISR blocks same-level IRQ.
-test "PIC: ISR blocks IRQ" {
-    var cpu = CPU{};
-    cpu.pic_imr = 0xFE; // Allow IRQ0
-    cpu.pic_isr = 0x01; // IRQ0 in service
-
-    cpu.requestIrq(0);
-    cpu.picUpdatePending();
-    try std.testing.expectEqual(false, cpu.pic_pending); // Blocked by ISR
-}
-
-// =============================================================================
-// PIT 8254 Tests (ports 0x40-0x43)
-// =============================================================================
-
-// Write mode register (0x43).
-test "PIT: write mode" {
-    var cpu = CPU{};
-
-    // OUT 0x43, 0x36 — Channel 0, lobyte/hibyte, rate generator
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0043));
-    cpu.ax = 0x0036;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0x36), cpu.pit_mode);
-}
-
-// Write Channel 0 (0x40).
-test "PIT: write channel 0" {
-    var cpu = CPU{};
-
-    // OUT 0x40, 0x3412 — write counter value
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0040));
-    cpu.ax = 0x3412;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x3412), cpu.pit_ch0);
-}
-
-// Write Channel 1 (0x41).
-test "PIT: write channel 1" {
-    var cpu = CPU{};
-
-    // OUT 0x41, 0xABCD
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0041));
-    cpu.ax = 0xABCD;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.pit_ch1);
-}
-
-// Write Channel 2 (0x42).
-test "PIT: write channel 2" {
-    var cpu = CPU{};
-
-    // OUT 0x42, 0x00FF
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0042));
-    cpu.ax = 0x00FF;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x00FF), cpu.pit_ch2);
-}
-
-// Read Channel 0 low byte.
-test "PIT: read channel 0 low" {
-    var cpu = CPU{};
-    cpu.pit_ch0 = 0x1234;
-
-    // IN AX, 0x40 — read low byte of channel 0
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0040));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x34), cpu.ax); // Low byte only
-}
-
-// =============================================================================
-// UART 16550 Tests (ports 0x3F8-0x3FF)
-// =============================================================================
-
-// Write and read data register (0x3F8).
+// Write and read UART data (port 0x00).
 test "UART: write/read data" {
     var cpu = CPU{};
 
-    // OUT 0x3F8, 'A' — write character
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x3F8));
+    // OUT 0x00, 'A' — write character
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0000));
     cpu.ax = @intCast(@as(u16, 'A'));
 
     try cpu.step();
@@ -618,110 +472,58 @@ test "UART: write/read data" {
     cpu.uart_rx_head = 1;
     cpu.uart_rx_tail = 0;
 
-    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x3F8));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x0000));
     cpu.ip = 0x0004;
     try cpu.step();
     try std.testing.expectEqual(@as(u16, 'B'), cpu.ax);
 }
 
-// Read LSR (0x3FD) — TX empty + THR empty.
-test "UART: read LSR idle" {
+// Read UART when empty returns 0.
+test "UART: read empty returns 0" {
     var cpu = CPU{};
 
-    // IN AX, 0x3FD — read LSR
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x3FD));
+    // IN AX, 0x00 — read from empty buffer
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0000));
 
     try cpu.step();
-    // Bit 5 (THR empty) + Bit 6 (TX empty) = 0x60
-    try std.testing.expectEqual(@as(u16, 0x60), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0), cpu.ax);
 }
 
-// Read LSR with data ready.
-test "UART: read LSR data ready" {
+// Timer reads cycle count (port 0x01).
+test "Timer: read cycle count" {
     var cpu = CPU{};
-    cpu.uart_rx[0] = 0x41;
-    cpu.uart_rx_head = 1;
+    cpu.cycle_count = 0x1234;
 
-    // IN AX, 0x3FD — read LSR
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x3FD));
+    // IN AX, 0x01 — read timer
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0001));
 
     try cpu.step();
-    // Bit 0 (Data Ready) + Bit 5 (THR empty) + Bit 6 (TX empty) = 0x61
-    try std.testing.expectEqual(@as(u16, 0x61), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
 }
 
-// Read IIR (0x3FA) — no interrupt pending.
-test "UART: read IIR no interrupt" {
+// Keyboard reads scan code (port 0x02).
+test "Keyboard: read scan code" {
     var cpu = CPU{};
+    cpu.kbd_buffer[0] = 0x1E; // 'A' scan code
+    cpu.kbd_head = 1;
 
-    // IN AX, 0x3FA — read IIR
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x3FA));
+    // IN AX, 0x02 — read keyboard
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0002));
 
     try cpu.step();
-    // Bit 0 = 1 (no interrupt pending)
-    try std.testing.expectEqual(@as(u16, 0x01), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x1E), cpu.ax);
+    try std.testing.expectEqual(@as(u8, 1), cpu.kbd_tail); // Tail advanced
 }
 
-// Read IIR with data ready — interrupt pending.
-test "UART: read IIR data ready" {
-    var cpu = CPU{};
-    cpu.uart_rx[0] = 0x41;
-    cpu.uart_rx_head = 1;
-
-    // IN AX, 0x3FA — read IIR
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x3FA));
-
-    try cpu.step();
-    // Bits 1-3 = 010 (Receiver data ready), Bit 0 = 0 (interrupt pending)
-    try std.testing.expectEqual(@as(u16, 0x04), cpu.ax);
-}
-
-// Write IER (0x3F9).
-test "UART: write IER" {
+// Keyboard reads 0 when empty.
+test "Keyboard: read empty returns 0" {
     var cpu = CPU{};
 
-    // OUT 0x3F9, 0x01 — enable RX interrupt
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x3F9));
-    cpu.ax = 0x0001;
+    // IN AX, 0x02 — read from empty buffer
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0002));
 
     try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0x01), cpu.uart_ier);
-}
-
-// Write LCR (0x3FB).
-test "UART: write LCR" {
-    var cpu = CPU{};
-
-    // OUT 0x3FB, 0x80 — enable DLAB (divisor latch access)
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x3FB));
-    cpu.ax = 0x0080;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0x80), cpu.uart_lcr);
-}
-
-// Write SCR (0x3FF) — scratch register.
-test "UART: write scratch" {
-    var cpu = CPU{};
-
-    // OUT 0x3FF, 0xAA
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x3FF));
-    cpu.ax = 0x00AA;
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u8, 0xAA), cpu.uart_scr);
-}
-
-// Read SCR (0x3FF).
-test "UART: read scratch" {
-    var cpu = CPU{};
-    cpu.uart_scr = 0x55;
-
-    // IN AX, 0x3FF
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x3FF));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x55), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0), cpu.ax);
 }
 
 // FlushUartTx prints all pending characters.

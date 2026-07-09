@@ -266,21 +266,66 @@ This encoding appears in:
 
 ### Instruction Word Format
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:mode:2
+        columns 2
+        M1["bit 11"] M0["bit 10"]
+    end
+    block:size:2
+        columns 2
+        S1["bit 9"] S0["bit 8"]
+    end
+    block:dest:2
+        columns 2
+        D1["bit 7"] D0["bit 6"]
+    end
+    block:source:6
+        columns 6
+        SR5["bit 5"] SR4["bit 4"] SR3["bit 3"] SR2["bit 2"] SR1["bit 1"] SR0["bit 0"]
+    end
 ```
-16-bit instruction:
-┌─────────┬─────────┬────────┬────────┬──────────┐
-│ [15:12] │ [11:10] │  [9:8] │  [7:6] │   [5:0]  │
-│  Opcode │  Mode   │  Size  │  Dest  │  Source   │
-│  (4)    │  (2)    │  (2)   │  (2)   │  (6)     │
-└─────────┴─────────┴────────┴────────┴──────────┘
 
-32-bit instruction:
-┌─────────┬─────────┬────────┬────────┬──────────────────┐
-│ [15:12] │ [11:10] │  [9:8] │  [7:6] │     [5:0]        │
-│  Opcode │  Mode   │  Size  │  Dest  │  Source/Imm(6)    │
-├─────────────────────────────────────────────────────────┤
-│                 [31:16] — Extended Immediate/Offset      │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:mode:2
+        columns 2
+        M1["bit 11"] M0["bit 10"]
+    end
+    block:size:2
+        columns 2
+        S1["bit 9"] S0["bit 8"]
+    end
+    block:dest:2
+        columns 2
+        D1["bit 7"] D0["bit 6"]
+    end
+    block:src_imm:6
+        columns 6
+        SI5["bit 5"] SI4["bit 4"] SI3["bit 3"] SI2["bit 2"] SI1["bit 1"] SI0["bit 0"]
+    end
+```
+
+```mermaid
+block-beta
+    columns 16
+    block:extended:16
+        columns 16
+        E15["bit 31"] E14["bit 30"] E13["bit 29"] E12["bit 28"]
+        E11["bit 27"] E10["bit 26"] E9["bit 25"] E8["bit 24"]
+        E7["bit 23"] E6["bit 22"] E5["bit 21"] E4["bit 20"]
+        E3["bit 19"] E2["bit 18"] E1["bit 17"] E0["bit 16"]
+    end
 ```
 
 ---

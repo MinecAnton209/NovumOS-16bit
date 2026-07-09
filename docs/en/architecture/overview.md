@@ -61,9 +61,9 @@ graph TB
     end
 
     subgraph Peripherals["Peripheral Devices"]
-        PIC["PIC 8259"]
-        PIT["PIT 8254"]
-        UART["UART 16550"]
+        UART["UART (port 0x00)"]
+        TIMER["Timer (port 0x01)"]
+        KBD["Keyboard (port 0x02)"]
         VGA["VGA Text Adapter"]
     end
 
@@ -102,6 +102,9 @@ graph TB
     IO_MUX <-->|I/O ports| Peripherals
     CONTROL_BUS --> IO_MUX
     IO_DECODE --> IO_MUX
+
+    KBD --> IO_MUX
+    TIMER --> IO_MUX
 ```
 
 ---
@@ -352,9 +355,9 @@ graph TB
     PORT_DEC --> IO_WR
 
     subgraph Devices["I/O Ports"]
-        PIC_PORT["PIC: 0x20-0x21"]
-        PIT_PORT["PIT: 0x40-0x43"]
-        UART_PORT["UART: 0x3F8-0x3FF"]
+        UART_PORT["UART: 0x00"]
+        TIMER_PORT["Timer: 0x01"]
+        KBD_PORT["Keyboard: 0x02"]
     end
 
     IO_RD <--> Devices
@@ -448,7 +451,7 @@ Each instruction completes in a fixed number of clock cycles, determined by the 
 
 ## Interrupt Handling
 
-When the `INT` line is asserted by the PIC 8259:
+When the `INT` instruction is executed or the `INT` line is asserted:
 
 1. Current instruction completes (never interrupted mid-cycle)
 2. Program Counter (IP) is pushed onto the stack
@@ -460,17 +463,14 @@ When the `INT` line is asserted by the PIC 8259:
 ```mermaid
 sequenceDiagram
     participant CPU as CPU
-    participant PIC as PIC 8259
     participant ISR as Interrupt Handler
 
-    Note over PIC: Device requests interrupt
-    PIC->>CPU: INT signal asserted
+    Note over CPU: INT instruction executed
     Note over CPU: Current instruction completes
     CPU->>CPU: Push FLAGS to stack
     CPU->>CPU: Push IP to stack
     CPU->>CPU: Load IP from vector table
     CPU->>ISR: Execute ISR
-    ISR->>CPU: Send EOI to PIC
     ISR->>CPU: IRET (pop IP, FLAGS)
     Note over CPU: Resume normal execution
 ```

@@ -14,37 +14,106 @@ The NovumOS-16bit CPU uses a hybrid 16/32-bit instruction format with 4-bit opco
 
 ### 16-bit Format
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:dst:2
+        columns 2
+        D1["bit 11"] D0["bit 10"]
+    end
+    block:src:2
+        columns 2
+        S1["bit 9"] S0["bit 8"]
+    end
+    block:mode:2
+        columns 2
+        M1["bit 7"] M0["bit 6"]
+    end
+    block:unused:6
+        columns 6
+        U5["bit 5"] U4["bit 4"] U3["bit 3"] U2["bit 2"] U1["bit 1"] U0["bit 0"]
+    end
 ```
-┌─────────┬─────────┬─────────┬─────────┬──────────┐
-│ [15:12] │ [11:10] │  [9:8]  │  [7:6]  │  [5:0]   │
-│  Opcode │   Dst   │   Src   │  Mode   │  Unused  │
-│  (4)    │  (2)    │  (2)    │  (2)    │  (6)     │
-└─────────┴─────────┴─────────┴─────────┴──────────┘
-```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | Operation code |
+| `Dst` | 11:10 | 2 | Destination register |
+| `Src` | 9:8 | 2 | Source register |
+| `Mode` | 7:6 | 2 | Addressing mode |
+| `Unused` | 5:0 | 6 | Not used |
 
 ### 32-bit Format (with immediate)
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:dst:2
+        columns 2
+        D1["bit 11"] D0["bit 10"]
+    end
+    block:mode:2
+        columns 2
+        M1["bit 9"] M0["bit 8"]
+    end
+    block:unused:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"]
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
 ```
-┌─────────┬─────────┬─────────┬──────────────────────┐
-│ [15:12] │ [11:10] │  [9:8]  │        [7:0]         │
-│  Opcode │   Dst   │  Mode   │  Unused (high byte)  │
-│  (4)    │  (2)    │  (2)    │  (8)                  │
-├─────────────────────────────────────────────────────┤
-│               [31:16] — Immediate Value              │
-└─────────────────────────────────────────────────────┘
+
+```mermaid
+block-beta
+    columns 16
+    block:imm16:16
+        columns 16
+        I15["bit 31"] I14["bit 30"] I13["bit 29"] I12["bit 28"]
+        I11["bit 27"] I10["bit 26"] I9["bit 25"] I8["bit 24"]
+        I7["bit 23"] I6["bit 22"] I5["bit 21"] I4["bit 20"]
+        I3["bit 19"] I2["bit 18"] I1["bit 17"] I0["bit 16"]
+    end
 ```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | Operation code |
+| `Dst` | 11:10 | 2 | Destination register |
+| `Mode` | 9:8 | 2 | Addressing mode |
+| `Unused` | 7:0 | 8 | Not used |
+| `Immediate` | 31:16 | 16 | Immediate value |
 
 ### Group Command Format (ALU, CondJump, PushPop)
 
 For group commands, bits [11:8] are repurposed as **Mode** and **Size** (4-bit sub-opcode):
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:subop:12
+        columns 12
+        S11["bit 11"] S10["bit 10"] S9["bit 9"] S8["bit 8"]
+        S7["bit 7"] S6["bit 6"] S5["bit 5"] S4["bit 4"]
+        S3["bit 3"] S2["bit 2"] S1["bit 1"] S0["bit 0"]
+    end
 ```
-┌─────────┬──────────────────────────────────────────┐
-│ [15:12] │               [11:0]                     │
-│  Opcode │  Sub-opcode (Mode+Size) or Dst/Src      │
-│  (4)    │  (12)                                    │
-└─────────┴──────────────────────────────────────────┘
-```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | Operation code |
+| `Sub-opcode` | 11:0 | 12 | Sub-opcode (Mode+Size) or Dst/Src |
 
 ---
 
@@ -96,12 +165,38 @@ Sub-decoded by Mode[11:10] + Size[9:8]:
 
 ### ALU Instruction Encoding
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:alu_subop:4
+        columns 4
+        A3["bit 11"] A2["bit 10"] A1["bit 9"] A0["bit 8"]
+    end
+    block:dst:2
+        columns 2
+        D1["bit 7"] D0["bit 6"]
+    end
+    block:src:2
+        columns 2
+        S1["bit 5"] S0["bit 4"]
+    end
+    block:unused:4
+        columns 4
+        U3["bit 3"] U2["bit 2"] U1["bit 1"] U0["bit 0"]
+    end
 ```
-┌─────────┬─────────────────────────────┬─────────┬─────────┬──────────┐
-│ [15:12] │          [11:8]             │  [7:6]  │  [5:4]  │  [3:0]   │
-│  0xA    │    ALU sub-opcode (4)       │   Dst   │   Src   │  Unused  │
-└─────────┴─────────────────────────────┴─────────┴─────────┴──────────┘
-```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | 0xA (ALU group) |
+| `ALU sub-opcode` | 11:8 | 4 | ALU operation sub-opcode |
+| `Dst` | 7:6 | 2 | Destination register |
+| `Src` | 5:4 | 2 | Source register |
+| `Unused` | 3:0 | 4 | Not used |
 
 ---
 
@@ -120,14 +215,42 @@ Sub-decoded by Mode[11:10] + Size[9:8]:
 
 ### Conditional Jump Encoding
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:subop:4
+        columns 4
+        S3["bit 11"] S2["bit 10"] S1["bit 9"] S0["bit 8"]
+    end
+    block:unused1:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"]
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
 ```
-┌─────────┬─────────────────────────────┬──────────────────────────────┐
-│ [15:12] │          [11:8]             │          [7:0]               │
-│  0xB    │    CondJump sub-opcode (4)  │    Unused                    │
-├───────────────────────────────────────────────────────────────────────┤
-│               [31:16] — Target Address                                │
-└───────────────────────────────────────────────────────────────────────┘
+
+```mermaid
+block-beta
+    columns 16
+    block:target:16
+        columns 16
+        T15["bit 31"] T14["bit 30"] T13["bit 29"] T12["bit 28"]
+        T11["bit 27"] T10["bit 26"] T9["bit 25"] T8["bit 24"]
+        T7["bit 23"] T6["bit 22"] T5["bit 21"] T4["bit 20"]
+        T3["bit 19"] T2["bit 18"] T1["bit 17"] T0["bit 16"]
+    end
 ```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | 0xB (conditional jump group) |
+| `CondJump sub-opcode` | 11:8 | 4 | Condition sub-opcode |
+| `Unused` | 7:0 | 8 | Not used |
+| `Target` | 31:16 | 16 | Jump target address |
 
 ---
 
@@ -142,12 +265,34 @@ Sub-decoded by Mode[9:8]:
 
 ### PUSH/POP Encoding
 
+```mermaid
+block-beta
+    columns 16
+    block:opcode:4
+        columns 4
+        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+    end
+    block:reg:2
+        columns 2
+        R1["bit 11"] R0["bit 10"]
+    end
+    block:mode:2
+        columns 2
+        M1["bit 9"] M0["bit 8"]
+    end
+    block:unused:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"]
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
 ```
-┌─────────┬─────────┬─────────┬──────────────────────┐
-│ [15:12] │ [11:10] │  [9:8]  │        [7:0]         │
-│  0xC    │   Reg   │  Mode   │  Unused               │
-└─────────┴─────────┴─────────┴──────────────────────┘
-```
+
+| Field | Bits | Width | Description |
+|-------|------|-------|-------------|
+| `Opcode` | 15:12 | 4 | 0xC (stack operations group) |
+| `Reg` | 11:10 | 2 | Operand register |
+| `Mode` | 9:8 | 2 | Mode (00=PUSH, 01=POP) |
+| `Unused` | 7:0 | 8 | Not used |
 
 ---
 

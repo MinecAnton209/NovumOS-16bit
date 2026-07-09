@@ -17,26 +17,22 @@ The emulator is used for:
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Emulator (Zig)                       │
-│                                                         │
-│  ┌──────────┐    ┌──────────┐    ┌──────────────────┐  │
-│  │  cpu.zig │    │ main.zig │    │    test.zig      │  │
-│  │          │    │          │    │                  │  │
-│  │ CPU      │◄───│ Load     │    │ 38 unit tests   │  │
-│  │ step()   │    │ firmware │    │ covering all ISA │  │
-│  │ run()    │    │ Execute  │    │ instructions     │  │
-│  │ ALU      │    │ Dump     │    │                  │  │
-│  └──────────┘    └──────────┘    └──────────────────┘  │
-│       ▲                                                │
-│       │                                                │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │              codegen.zig                         │  │
-│  │                                                  │  │
-│  │  ISA enums, encode functions, firmware generator │  │
-│  └──────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+
+    block:emulator:1
+        columns 1
+        block:top:3
+            columns 3
+            cpu["cpu.zig<br/>CPU<br/>step() run() ALU"]
+            main["main.zig<br/>Load firmware<br/>Execute Dump"]
+            test["test.zig<br/>38 unit tests<br/>covering all ISA"]
+        end
+    end
+
+    cpu --> main
+    test --> main
 ```
 
 ### Files
