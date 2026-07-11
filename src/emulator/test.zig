@@ -314,7 +314,7 @@ test "PUSH/POP" {
 }
 
 // =============================================================================
-// Conditional Jump Tests (6 conditions)
+// Conditional Jump Tests — 32-bit format (6 conditions)
 // =============================================================================
 
 // JZ — jump taken when Zero flag is set
@@ -385,6 +385,37 @@ test "JNS taken" {
 
     try cpu.step();
     try std.testing.expectEqual(@as(u16, 0x0010), cpu.ip);
+}
+
+// =============================================================================
+// CondJump 16-bit Format Tests
+// =============================================================================
+
+// 16-bit JZ: jump taken when Zero flag is set
+test "JZ taken 16-bit" {
+    var cpu = CPU{};
+    cpu.flags |= CPU.ZERO_FLAG;
+    // 16-bit CondJump: opcode=CondJump<<12 | cond=JZ<<8 | mode=Imm<<6
+    const word = (@as(u16, @intFromEnum(ISA.Opcode.CondJump)) << 12) |
+        (@as(u16, @intFromEnum(ISA.CondJump.JZ)) << 8) |
+        (@as(u16, @intFromEnum(ISA.AddrMode.Imm)) << 6);
+    writeInstruction(&cpu.memory, 0, word);
+    writeInstruction(&cpu.memory, 2, 0x0010);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0010), cpu.ip);
+}
+
+// 16-bit JZ: jump NOT taken when Zero flag is clear
+test "JZ not taken 16-bit" {
+    var cpu = CPU{};
+    cpu.flags &= ~CPU.ZERO_FLAG;
+    const word = (@as(u16, @intFromEnum(ISA.Opcode.CondJump)) << 12) |
+        (@as(u16, @intFromEnum(ISA.CondJump.JZ)) << 8) |
+        (@as(u16, @intFromEnum(ISA.AddrMode.Imm)) << 6);
+    writeInstruction(&cpu.memory, 0, word);
+    writeInstruction(&cpu.memory, 2, 0x0010);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0004), cpu.ip); // skipped (IP+4)
 }
 
 // =============================================================================
@@ -1458,3 +1489,649 @@ test "DEC: no carry flag" {
     try std.testing.expect(!cpu.getCarry()); // DEC does NOT set carry
     try std.testing.expect(cpu.getSign()); // Result is negative (bit 15 set)
 }
+
+// =============================================================================
+// VGA Tests — direct calls to vgaPutChar / vgaControl / vgaScrollUp
+// =============================================================================
+
+// vgaPutChar with a printable character writes to the VGA buffer at cursor
+// position, advances cursor column, and sets dirty flag.
+test "VGA: putChar printable" {
+    var cpu = CPU{};
+    cpu.vgaPutChar('A');
+
+    try std.testing.expectEqual(@as(u16, 0x0741), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_row);
+    try std.testing.expectEqual(@as(u16, 1), cpu.vga_cursor_col);
+    try std.testing.expectEqual(true, cpu.vga_dirty);
+}
+
+// vgaPutChar with CR (0x0D) sets cursor column to 0.
+test "VGA: putChar CR" {
+    var cpu = CPU{};
+    cpu.vga_cursor_col = 42;
+    cpu.vgaPutChar(0x0D);
+
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+}
+
+// vgaPutChar with LF (0x0A) advances cursor row by 1.
+test "VGA: putChar LF" {
+    var cpu = CPU{};
+    cpu.vgaPutChar(0x0A);
+
+    try std.testing.expectEqual(@as(u16, 1), cpu.vga_cursor_row);
+}
+
+// vgaPutChar with Backspace (0x08) moves cursor back and clears the cell.
+test "VGA: putChar Backspace" {
+    var cpu = CPU{};
+    cpu.vga_buffer[0] = 0x0741; // 'A' at row 0, col 0
+    cpu.vga_cursor_col = 1;
+    cpu.vgaPutChar(0x08);
+
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[0]); // cleared to space
+}
+
+// When a printable character reaches column 80, it wraps to the next row.
+test "VGA: printable wraps at col 80" {
+    var cpu = CPU{};
+    cpu.vga_cursor_col = 79;
+    cpu.vgaPutChar('X');
+
+    // 'X' should be at row 0, col 79
+    try std.testing.expectEqual(@as(u16, 0x0758), cpu.vga_buffer[79]);
+    // Cursor should now be at row 1, col 0
+    try std.testing.expectEqual(@as(u16, 1), cpu.vga_cursor_row);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+}
+
+// vgaPutChar LF at the last row triggers a scroll.
+test "VGA: LF scrolls at row 25" {
+    var cpu = CPU{};
+    cpu.vga_cursor_row = 24;
+    // Put a char in row 0 so we can detect scrolling
+    cpu.vga_buffer[0] = 0x0741; // 'A'
+
+    cpu.vgaPutChar(0x0A);
+    // Cursor row should be 24 (not 25, since scrolled)
+    try std.testing.expectEqual(@as(u16, 24), cpu.vga_cursor_row);
+    // Row 0 should now contain row 1's content (which is 0x0720 space)
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[0]);
+}
+
+// Direct call to vgaScrollUp shifts all rows up by 1 and clears the last row.
+test "VGA: scrollUp shifts rows" {
+    var cpu = CPU{};
+    cpu.vga_buffer[0] = 0x0741; // Row 0, col 0 = 'A'
+    cpu.vga_buffer[80] = 0x0742; // Row 1, col 0 = 'B'
+    cpu.vgaScrollUp();
+
+    // After scroll: row 0 should have what was in row 1
+    try std.testing.expectEqual(@as(u16, 0x0742), cpu.vga_buffer[0]);
+    // Last row should be cleared
+    const last_start: usize = 24 * 80;
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[last_start]);
+}
+
+// vgaControl with 0x0001 clears the VGA buffer and resets cursor.
+test "VGA: control clear" {
+    var cpu = CPU{};
+    cpu.vga_buffer[0] = 0x0741; // 'A'
+    cpu.vga_buffer[100] = 0x0742; // some 'B' further in
+    cpu.vga_cursor_row = 10;
+    cpu.vga_cursor_col = 20;
+    cpu.vgaControl(0x0001);
+
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[100]);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_row);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+}
+
+// vgaControl with 0x0002 sets dirty flag.
+test "VGA: control flush sets dirty" {
+    var cpu = CPU{};
+    cpu.vga_dirty = false;
+    cpu.vgaControl(0x0002);
+
+    try std.testing.expectEqual(true, cpu.vga_dirty);
+}
+
+// vgaPutChar mirrors every character to the UART TX buffer.
+test "VGA: putChar UART mirror" {
+    var cpu = CPU{};
+    cpu.vgaPutChar('A');
+
+    try std.testing.expectEqual(@as(u8, 'A'), cpu.uart_tx[0]);
+    try std.testing.expectEqual(@as(u8, 1), cpu.uart_tx_head);
+}
+
+// vgaPutChar CR also mirrors to UART.
+test "VGA: putChar CR mirrors to UART" {
+    var cpu = CPU{};
+    cpu.vgaPutChar(0x0D);
+
+    try std.testing.expectEqual(@as(u8, 0x0D), cpu.uart_tx[0]);
+}
+
+// vgaPutChar LF also mirrors to UART.
+test "VGA: putChar LF mirrors to UART" {
+    var cpu = CPU{};
+    cpu.vgaPutChar(0x0A);
+
+    try std.testing.expectEqual(@as(u8, 0x0A), cpu.uart_tx[0]);
+}
+
+// =============================================================================
+// Line Buffer Tests — putKey / parseCommand / cmd_id / ports 0x03/0x04
+// =============================================================================
+
+// putKey with a printable character adds it to the line buffer and echoes to VGA.
+test "putKey: printable char goes to line_buf" {
+    var cpu = CPU{};
+    cpu.putKey('A');
+
+    try std.testing.expectEqual(@as(u8, 'A'), cpu.line_buf[0]);
+    try std.testing.expectEqual(@as(u8, 1), cpu.line_len);
+    // VGA should also have 'A' at (0,0)
+    try std.testing.expectEqual(@as(u16, 0x0741), cpu.vga_buffer[0]);
+}
+
+// putKey with multiple characters accumulates in the line buffer.
+test "putKey: multiple chars accumulate" {
+    var cpu = CPU{};
+    cpu.putKey('h');
+    cpu.putKey('e');
+    cpu.putKey('l');
+    cpu.putKey('p');
+
+    try std.testing.expectEqual(@as(u8, 4), cpu.line_len);
+    try std.testing.expectEqual(@as(u8, 'h'), cpu.line_buf[0]);
+    try std.testing.expectEqual(@as(u8, 'e'), cpu.line_buf[1]);
+    try std.testing.expectEqual(@as(u8, 'l'), cpu.line_buf[2]);
+    try std.testing.expectEqual(@as(u8, 'p'), cpu.line_buf[3]);
+}
+
+// putKey with Backspace removes the last character from the line buffer.
+test "putKey: Backspace removes last char" {
+    var cpu = CPU{};
+    cpu.putKey('A');
+    cpu.putKey('B');
+    cpu.putKey('C');
+    try std.testing.expectEqual(@as(u8, 3), cpu.line_len);
+
+    cpu.putKey(0x08); // Backspace
+    try std.testing.expectEqual(@as(u8, 2), cpu.line_len);
+    try std.testing.expectEqual(@as(u8, 'A'), cpu.line_buf[0]);
+    try std.testing.expectEqual(@as(u8, 'B'), cpu.line_buf[1]);
+}
+
+// putKey Backspace on an empty buffer is a no-op.
+test "putKey: Backspace on empty is no-op" {
+    var cpu = CPU{};
+    cpu.putKey(0x08);
+    try std.testing.expectEqual(@as(u8, 0), cpu.line_len);
+}
+
+// putKey with Enter (0x0D) calls parseCommand and sets cmd_id, then clears the buffer.
+test "putKey: Enter sets cmd_id and clears buffer" {
+    var cpu = CPU{};
+    cpu.putKey('h');
+    cpu.putKey('e');
+    cpu.putKey('l');
+    cpu.putKey('p');
+    cpu.putKey(0x0D); // Enter
+
+    try std.testing.expectEqual(@as(u8, 1), cpu.cmd_id); // help=1
+    try std.testing.expectEqual(@as(u8, 0), cpu.line_len); // buffer cleared
+    try std.testing.expectEqual(@as(u8, 0), cpu.line_buf[0]); // zeroed
+}
+
+// putKey with Enter on empty line sets cmd_id=7 (unknown → kernel re-prompts).
+test "putKey: Enter on empty sets cmd_id=7" {
+    var cpu = CPU{};
+    cpu.putKey(0x0D);
+
+    try std.testing.expectEqual(@as(u8, 7), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=1 for "help".
+test "parseCommand: help" {
+    var cpu = CPU{};
+    cpu.line_buf[0..4].* = .{ 'h', 'e', 'l', 'p' };
+    cpu.line_len = 4;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 1), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=2 for "clear".
+test "parseCommand: clear" {
+    var cpu = CPU{};
+    cpu.line_buf[0..5].* = .{ 'c', 'l', 'e', 'a', 'r' };
+    cpu.line_len = 5;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 2), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=3 for "reboot".
+test "parseCommand: reboot" {
+    var cpu = CPU{};
+    cpu.line_buf[0..6].* = .{ 'r', 'e', 'b', 'o', 'o', 't' };
+    cpu.line_len = 6;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 3), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=4 for "info".
+test "parseCommand: info" {
+    var cpu = CPU{};
+    cpu.line_buf[0..4].* = .{ 'i', 'n', 'f', 'o' };
+    cpu.line_len = 4;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 4), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=5 for "dump".
+test "parseCommand: dump" {
+    var cpu = CPU{};
+    cpu.line_buf[0..4].* = .{ 'd', 'u', 'm', 'p' };
+    cpu.line_len = 4;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 5), cpu.cmd_id);
+}
+
+// parseCommand sets cmd_id=6 for "halt".
+test "parseCommand: halt" {
+    var cpu = CPU{};
+    cpu.line_buf[0..4].* = .{ 'h', 'a', 'l', 't' };
+    cpu.line_len = 4;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 6), cpu.cmd_id);
+}
+
+// parseCommand with empty line sets cmd_id=7 (unknown / re-prompt).
+test "parseCommand: empty returns 7" {
+    var cpu = CPU{};
+    cpu.line_len = 0;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 7), cpu.cmd_id);
+}
+
+// parseCommand with unknown string sets cmd_id=7.
+test "parseCommand: unknown command returns 7" {
+    var cpu = CPU{};
+    cpu.line_buf[0..3].* = .{ 'f', 'o', 'o' };
+    cpu.line_len = 3;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 7), cpu.cmd_id);
+}
+
+// parseCommand with leading spaces still matches correctly.
+test "parseCommand: leading spaces" {
+    var cpu = CPU{};
+    cpu.line_buf[0..6].* = .{ ' ', ' ', 'h', 'e', 'l', 'p' };
+    cpu.line_len = 6;
+    cpu.parseCommand();
+
+    try std.testing.expectEqual(@as(u8, 1), cpu.cmd_id);
+}
+
+// Reading port 0x03 returns the current cmd_id and clears it.
+test "Port 0x03: returns cmd_id and clears" {
+    var cpu = CPU{};
+    cpu.cmd_id = 5; // dump
+
+    const id = cpu.readPort(0x03);
+    try std.testing.expectEqual(@as(u16, 5), id);
+    try std.testing.expectEqual(@as(u8, 0), cpu.cmd_id); // cleared after read
+}
+
+// Port 0x03 returns 0 when no command is pending.
+test "Port 0x03: returns 0 when idle" {
+    var cpu = CPU{};
+    const id = cpu.readPort(0x03);
+    try std.testing.expectEqual(@as(u16, 0), id);
+}
+
+// Reading port 0x04 returns bytes from the line buffer, one at a time.
+test "Port 0x04: reads line buffer bytes" {
+    var cpu = CPU{};
+    cpu.line_buf[0] = 'h';
+    cpu.line_buf[1] = 'i';
+    cpu.line_len = 2;
+    cpu.line_read_pos = 0;
+
+    try std.testing.expectEqual(@as(u16, 'h'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 'i'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 0), cpu.readPort(0x04)); // exhausted
+}
+
+// Port 0x04 returns 0 when the line buffer is empty.
+test "Port 0x04: returns 0 when empty" {
+    var cpu = CPU{};
+    cpu.line_len = 0;
+    try std.testing.expectEqual(@as(u16, 0), cpu.readPort(0x04));
+}
+
+// =============================================================================
+// I/O Port Integration Tests — via IN/OUT instructions
+// =============================================================================
+
+// OUT 0x10 with a character writes to VGA via instruction.
+test "I/O: OUT 0x10 writes to VGA" {
+    var cpu = CPU{};
+    cpu.ax = 'Z';
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0010));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x075A), cpu.vga_buffer[0]); // 'Z'
+    try std.testing.expectEqual(@as(u16, 1), cpu.vga_cursor_col);
+}
+
+// OUT 0x11 with 0x0001 clears VGA via instruction.
+test "I/O: OUT 0x11 clear screen" {
+    var cpu = CPU{};
+    cpu.vga_buffer[0] = 0x0741; // 'A'
+    cpu.vga_cursor_row = 10;
+    cpu.vga_cursor_col = 20;
+    cpu.ax = 0x0001;
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0011));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_row);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+}
+
+// IN from port 0x03 after putKey Enter returns the command ID.
+test "I/O: IN 0x03 after command" {
+    var cpu = CPU{};
+    cpu.putKey('h');
+    cpu.putKey('e');
+    cpu.putKey('l');
+    cpu.putKey('p');
+    cpu.putKey(0x0D); // Enter → cmd_id=1
+
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0003));
+    try cpu.step();
+
+    try std.testing.expectEqual(@as(u16, 1), cpu.ax);
+    try std.testing.expectEqual(@as(u8, 0), cpu.cmd_id); // cleared on read
+}
+
+// IN from port 0x04 after typing returns the buffer contents.
+test "I/O: IN 0x04 reads typed line" {
+    var cpu = CPU{};
+    cpu.putKey('d');
+    cpu.putKey('u');
+    cpu.putKey('m');
+    cpu.putKey('p');
+
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0004));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 'd'), cpu.ax);
+
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x0004));
+    cpu.ip = 4;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 'u'), cpu.ax);
+
+    writeInstruction32(&cpu.memory, 8, ISA.encode32(.IN, .AX, 0x0004));
+    cpu.ip = 8;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 'm'), cpu.ax);
+
+    writeInstruction32(&cpu.memory, 12, ISA.encode32(.IN, .AX, 0x0004));
+    cpu.ip = 12;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 'p'), cpu.ax);
+}
+
+// Full workflow: type "help" + Enter, read cmd_id from port 0x03, dispatch.
+test "I/O: full command workflow" {
+    var cpu = CPU{};
+
+    // Type "help" + Enter
+    cpu.putKey('h');
+    cpu.putKey('e');
+    cpu.putKey('l');
+    cpu.putKey('p');
+    cpu.putKey(0x0D);
+
+    // Read cmd_id from port 0x03
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0003));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 1), cpu.ax); // help=1
+    try std.testing.expectEqual(@as(u8, 0), cpu.cmd_id); // cleared
+}
+
+// =============================================================================
+// JMP Tests
+// =============================================================================
+
+// JMP immediate (32-bit) — jump to target address
+test "JMP immediate 32-bit" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.JMP, .AX, 0x0050));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0050), cpu.ip);
+}
+
+// JMP register (16-bit) — jump to address in register
+test "JMP register 16-bit" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .BX, 0x0030));
+    writeInstruction(&cpu.memory, 4, ISA.encode16(.JMP, .AX, .BX, .RegReg));
+    try cpu.step(); // MOV BX, 0x0030
+    try cpu.step(); // JMP BX
+    try std.testing.expectEqual(@as(u16, 0x0030), cpu.ip);
+}
+
+// =============================================================================
+// MOV Addressing Mode Tests (16-bit)
+// =============================================================================
+
+// MOV AX, [BX] (16-bit Indirect) — load from memory address in BX
+test "MOV indirect 16-bit" {
+    var cpu = CPU{};
+    cpu.bx = 0x0100;
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .BX, .Indirect));
+    cpu.memory[0x0100] = 0xCD;
+    cpu.memory[0x0101] = 0xAB;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 2), cpu.ip);
+}
+
+// MOV AX, [BX+0x0004] (16-bit IndirectOff) — load with offset
+test "MOV indirect-offset 16-bit" {
+    var cpu = CPU{};
+    cpu.bx = 0x0100;
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .BX, .IndirectOff));
+    writeInstruction(&cpu.memory, 2, 0x0004);
+    cpu.memory[0x0104] = 0x34;
+    cpu.memory[0x0105] = 0x12;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 4), cpu.ip);
+}
+
+// MOV AX, 0x1234 (16-bit Imm)
+test "MOV immediate 16-bit" {
+    var cpu = CPU{};
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+    writeInstruction(&cpu.memory, 2, 0x1234);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 4), cpu.ip);
+}
+
+// =============================================================================
+// CALL/INT/IN/OUT 16-bit Format Tests
+// =============================================================================
+
+// CALL 0x0050 (16-bit) — push return address, jump
+test "CALL 16-bit" {
+    var cpu = CPU{};
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.CALL, .AX, .AX, .Imm));
+    writeInstruction(&cpu.memory, 2, 0x0050);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0050), cpu.ip);
+    try std.testing.expectEqual(@as(u16, 0x0004), cpu.popStack());
+}
+
+// INT 0x0002 (16-bit) — push flags and return address, jump to vector*4
+test "INT 16-bit" {
+    var cpu = CPU{};
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.INT, .AX, .AX, .Imm));
+    writeInstruction(&cpu.memory, 2, 0x0002);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0008), cpu.ip);
+    try std.testing.expectEqual(@as(u16, 0x0004), cpu.popStack());
+}
+
+// IN AX, 0x22 (16-bit)
+test "IN 16-bit" {
+    var cpu = CPU{};
+    cpu.io_ports[0x22] = 0x1234;
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.IN, .AX, .AX, .Imm));
+    writeInstruction(&cpu.memory, 2, 0x0022);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 4), cpu.ip);
+}
+
+// OUT 0x22, AX (16-bit)
+test "OUT 16-bit" {
+    var cpu = CPU{};
+    cpu.ax = 0x5678;
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.OUT, .AX, .AX, .Imm));
+    writeInstruction(&cpu.memory, 2, 0x0022);
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x5678), cpu.io_ports[0x22]);
+    try std.testing.expectEqual(@as(u16, 4), cpu.ip);
+}
+
+// =============================================================================
+// TEST ALU Operation (flags only, no result stored)
+// =============================================================================
+
+test "TEST: zero result sets Z" {
+    var cpu = CPU{};
+    cpu.ax = 0x00FF;
+    cpu.bx = 0xFF00;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.TEST, .AX, .BX));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x00FF), cpu.ax); // AX unchanged
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+test "TEST: non-zero result clears Z" {
+    var cpu = CPU{};
+    cpu.ax = 0x00FF;
+    cpu.bx = 0x00FF;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.TEST, .AX, .BX));
+    try cpu.step();
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+test "TEST: sign flag from bit 15" {
+    var cpu = CPU{};
+    cpu.ax = 0x8000;
+    cpu.bx = 0x8000;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.TEST, .AX, .BX));
+    try cpu.step();
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(cpu.getSign());
+}
+
+// =============================================================================
+// SHL/SHR Carry Flag Tests
+// =============================================================================
+
+// SHL carry should be the last bit shifted out (bit 15 when shifting by 1)
+test "SHL: carry from bit 15" {
+    var cpu = CPU{};
+    cpu.ax = 0x8001;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHL, .AX, .BX));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0002), cpu.ax);
+    try std.testing.expect(cpu.getCarry()); // bit 15 = 1
+}
+
+test "SHL: no carry when top bit is 0" {
+    var cpu = CPU{};
+    cpu.ax = 0x4000;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHL, .AX, .BX));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x8000), cpu.ax);
+    try std.testing.expect(!cpu.getCarry()); // bit 15 was 0
+}
+
+// SHR carry should be the last bit shifted out (bit 0 when shifting by 1)
+test "SHR: carry from bit 0" {
+    var cpu = CPU{};
+    cpu.ax = 0x0001;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHR, .AX, .BX));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getCarry()); // bit 0 = 1
+}
+
+test "SHR: carry from bit 7 when shifting by 8" {
+    var cpu = CPU{};
+    cpu.ax = 0xFF00;
+    cpu.bx = 0x0008;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHR, .AX, .BX));
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x00FF), cpu.ax);
+    try std.testing.expect(!cpu.getCarry()); // bit 7 was 1, not bit 0
+}
+
+// =============================================================================
+// PUSH/POP — all 4 registers
+// =============================================================================
+
+test "PUSH/POP all 4 registers" {
+    var cpu = CPU{};
+    cpu.ax = 0x0001;
+    cpu.bx = 0x0002;
+    cpu.cx = 0x0003;
+    cpu.dx = 0x0004;
+    writeInstruction(&cpu.memory, 0, ISA.encodePushPop(.PUSH, .AX));
+    writeInstruction(&cpu.memory, 2, ISA.encodePushPop(.PUSH, .BX));
+    writeInstruction(&cpu.memory, 4, ISA.encodePushPop(.PUSH, .CX));
+    writeInstruction(&cpu.memory, 6, ISA.encodePushPop(.PUSH, .DX));
+    writeInstruction(&cpu.memory, 8, ISA.encodePushPop(.POP, .DX));
+    writeInstruction(&cpu.memory, 10, ISA.encodePushPop(.POP, .CX));
+    writeInstruction(&cpu.memory, 12, ISA.encodePushPop(.POP, .BX));
+    writeInstruction(&cpu.memory, 14, ISA.encodePushPop(.POP, .AX));
+
+    try cpu.step(); try cpu.step(); try cpu.step(); try cpu.step();
+    try cpu.step(); try cpu.step(); try cpu.step(); try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0001), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x0002), cpu.bx);
+    try std.testing.expectEqual(@as(u16, 0x0003), cpu.cx);
+    try std.testing.expectEqual(@as(u16, 0x0004), cpu.dx);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
+}
+
+

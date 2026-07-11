@@ -310,6 +310,28 @@ pub const Disassembler = struct {
         }
     }
 
+    /// Count how many consecutive instructions starting at `addr` have the same
+    /// disassembly text as the instruction at `addr`. Returns at least 1.
+    pub fn countCollapsed(self: *Disassembler, addr: u16, end: u16) u16 {
+        const first = self.disassemble(addr);
+        var first_text: [64]u8 = std.mem.zeroes([64]u8);
+        @memcpy(&first_text, &first.text);
+        var first_len: usize = 0;
+        while (first_len < first_text.len and first_text[first_len] != 0) : (first_len += 1) {}
+
+        var count: u16 = 1;
+        var scan_addr = addr +% first.size;
+        while (scan_addr < end and count < 256) {
+            const next = self.disassemble(scan_addr);
+            var next_len: usize = 0;
+            while (next_len < next.text.len and next.text[next_len] != 0) : (next_len += 1) {}
+            if (!std.mem.eql(u8, first_text[0..first_len], next.text[0..next_len])) break;
+            count += 1;
+            scan_addr +%= next.size;
+        }
+        return count;
+    }
+
     /// Disassemble a range of memory and print to stderr.
     /// Collapses repeated identical instructions (e.g. NOP runs) into a single range line.
     pub fn dumpDisassembly(self: *Disassembler, start: u16, end: u16) void {
@@ -321,28 +343,13 @@ pub const Disassembler = struct {
             while (len < text.len and text[len] != 0) : (len += 1) {}
             const text_str = if (len > 0) text[0..len] else "???";
 
-            // Count how many consecutive instructions have the same text
-            var count: u16 = 1;
-            var scan_addr = addr +% result.size;
-            while (scan_addr < end and count < 256) {
-                const next = self.disassemble(scan_addr);
-                var next_len: usize = 0;
-                while (next_len < next.text.len and next.text[next_len] != 0) : (next_len += 1) {}
-                const next_str = if (next_len > 0) next.text[0..next_len] else "???";
-                if (!std.mem.eql(u8, text_str, next_str)) break;
-                count += 1;
-                scan_addr +%= next.size;
-            }
-
+            const count = self.countCollapsed(addr, end);
+            const old = addr;
             if (count >= 3) {
-                // Collapse: show first, "... (N more)", then resume after last
-                const range_end = scan_addr -% result.size;
+                const range_end = addr +% (count - 1) *% result.size;
                 std.debug.print("  0x{X:0>4} - 0x{X:0>4}: {s}\n", .{ addr, range_end, text_str });
-                const old = addr;
-                addr = scan_addr;
-                if (addr <= old) break;
+                addr +%= count *% result.size;
             } else {
-                // Show normally
                 std.debug.print("  0x{X:0>4}: ", .{addr});
                 if (result.size == 4) {
                     const lo = self.readWord(addr);
@@ -357,10 +364,9 @@ pub const Disassembler = struct {
                     });
                 }
                 std.debug.print("{s}\n", .{text_str});
-                const old = addr;
                 addr +%= result.size;
-                if (addr <= old) break;
             }
+            if (addr <= old) break;
         }
     }
 };

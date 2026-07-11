@@ -285,7 +285,7 @@ pub const CPU = struct {
     }
 
     /// Parse the line buffer and set cmd_id.
-    fn parseCommand(self: *CPU) void {
+    pub fn parseCommand(self: *CPU) void {
         self.cmd_id = 0;
         if (self.line_len == 0) {
             self.cmd_id = 7; // treat empty as unknown → kernel re-prompts
@@ -452,7 +452,7 @@ pub const CPU = struct {
     // =========================================================================
 
     /// Write a byte to UART transmit buffer.
-    fn uartWriteData(self: *CPU, byte: u8) void {
+    pub fn uartWriteData(self: *CPU, byte: u8) void {
         self.uart_tx[self.uart_tx_head] = byte;
         self.uart_tx_head +%= 1;
     }
@@ -464,7 +464,7 @@ pub const CPU = struct {
     /// Put a character to the VGA text buffer at the current cursor position.
     /// Also mirrors to UART TX buffer so the emulator can print to stdout.
     /// Handles CR (0x0D), LF (0x0A), printable chars, and scrolling.
-    fn vgaPutChar(self: *CPU, byte: u8) void {
+    pub fn vgaPutChar(self: *CPU, byte: u8) void {
         // Mirror every VGA char to UART TX for terminal output
         self.uartWriteData(byte);
 
@@ -512,7 +512,7 @@ pub const CPU = struct {
     }
 
     /// Handle VGA control commands.
-    fn vgaControl(self: *CPU, cmd: u16) void {
+    pub fn vgaControl(self: *CPU, cmd: u16) void {
         switch (cmd) {
             0x0001 => {
                 // Clear screen: fill buffer with spaces, reset cursor
@@ -529,7 +529,7 @@ pub const CPU = struct {
     }
 
     /// Scroll VGA buffer up by one row (row 1→0, row 2→1, ..., clear last row).
-    fn vgaScrollUp(self: *CPU) void {
+    pub fn vgaScrollUp(self: *CPU) void {
         const cols = self.vga_cols;
         const rows = self.vga_rows;
         const row_bytes: usize = cols;
@@ -578,19 +578,41 @@ pub const CPU = struct {
         // Bits 25:24 = mode field. In encode32, mode is always 01 (Imm).
         // In encode16, bits 7:6 are mode but bits 25:24 are undefined/zero.
         //
-        // BUG FIX: When a 16-bit instruction is followed by a 32-bit one,
-        // bits 25:24 of raw32 come from the NEXT instruction's byte 1.
+        // BUG: When a 16-bit ALU instruction is followed by a 32-bit one,
+        // bits 25:24 of raw32 come from the NEXT instruction's bytes 10-11.
         // All 32-bit instructions have mode=01 at bits 25:24, so the 16-bit
-        // instruction gets misidentified as 32-bit.
+        // ALU instruction gets misidentified as 32-bit.
         //
         // Fix: 16-bit ALU instructions always have opcode 0xA at bits 15:12.
         // 32-bit instructions have their opcode at bits 31:28, and bits 15:12
         // are part of the immediate field (never 0xA in practice for this ISA).
         // So if bits 15:12 == 0xA, it's definitely a 16-bit ALU instruction.
+        //
+        // Note: other 16-bit-only opcodes (NOP=0, RET=4, HLT=6, IRET=7, PushPop=0xC)
+        // DON'T need special handling because when followed by a 32-bit instruction,
+        // the next instruction's byte at addr+3 always has bits 25:24 = 0 (not 01),
+        // so hi_mode == 0 and they're correctly detected as 16-bit.
         const hi_mode: u2 = @intCast((raw32 >> 24) & 0x3);
         const lo_opcode: u4 = @intCast((lo16 >> 12) & 0xF);
+        const hi_opcode: u4 = @intCast((raw32 >> 28) & 0xF);
+        // 16-bit ALU instructions have opcode 0xA at bits 15:12.
+        // When a 16-bit ALU follows a 32-bit instruction, hi16 contains
+        // bytes from the NEXT 32-bit instruction, which has hi_mode == 01
+        // and hi_opcode matching a known 32-bit opcode. Without this check,
+        // the ALU would be misidentified as 32-bit.
         const is_16bit_alu = (lo_opcode == 0xA);
-        const is_32bit = if (is_16bit_alu) false else (hi_mode == 0b01);
+        // 16-bit PushPop (opcode 0xC at bits 15:12) can also be misidentified
+        // when followed by another PushPop whose byte at addr+3 has
+        // hi_mode == 01 (e.g. PUSH DX=0xCC00 followed by POP DX=0xCD00).
+        // Cross-check hi_opcode: if hi_opcode at bits 31:28 is a known
+        // 32-bit-format opcode then lo_opcode may be a false positive
+        // from the immediate field (e.g. MOV AX, 0xABCD has lo_opcode=0xC).
+        // If hi_opcode is NOT in the 32-bit-format set, it's true 16-bit PushPop.
+        const is_16bit_pushpop = (lo_opcode == 0xC) and switch (hi_opcode) {
+            1, 2, 3, 5, 8, 9, 0xB => false,
+            else => true,
+        };
+        const is_32bit = if (is_16bit_alu or is_16bit_pushpop) false else (hi_mode == 0b01);
 
         // Opcode extraction depends on instruction format:
         //   32-bit: bits 31:28 of raw32
@@ -704,7 +726,7 @@ pub const CPU = struct {
                     }
                 } else {
                     // 16-bit JMP: target is the next word (inline immediate)
-                    const mode: ISA.AddrMode = @enumFromInt(@as(u2, @intCast((inst16 >> 8) & 0x3)));
+                    const mode: ISA.AddrMode = @enumFromInt(@as(u2, @intCast((inst16 >> 6) & 0x3)));
                     switch (mode) {
                         .Imm => {
                             const target = self.readWord(self.ip +% 2);
@@ -738,7 +760,7 @@ pub const CPU = struct {
                     }
                 } else {
                     // 16-bit CALL: target is the next word (inline immediate)
-                    const mode: ISA.AddrMode = @enumFromInt(@as(u2, @intCast((inst16 >> 8) & 0x3)));
+                    const mode: ISA.AddrMode = @enumFromInt(@as(u2, @intCast((inst16 >> 6) & 0x3)));
                     switch (mode) {
                         .Imm => {
                             const target = self.readWord(self.ip +% 2);
@@ -1007,7 +1029,7 @@ pub const CPU = struct {
                 const count: u4 = @intCast(b & 0xF);
                 const result = a << count;
                 self.setReg(dst, result);
-                self.setCarry(if (count > 0) (a >> (@as(u4, 4) -% count)) & 1 != 0 else false);
+                self.setCarry(if (count > 0) (a >> (@as(u4, 0) -% count)) & 1 != 0 else false);
                 self.updateFlags(result);
             },
             .SHR => {
