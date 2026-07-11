@@ -51,7 +51,29 @@ pub const CPU = struct {
     /// Cycle counter — incremented each step(), acts as a simple timer.
     cycle_count: u32 = 0,
 
-    // --- UART (port 0x00) — simple terminal I/O ---
+    // --- VGA (port 0x10 output, port 0x11 control) ---
+
+    /// VGA text buffer: 80 columns x 25 rows, each cell = 2 bytes (char + attr).
+    /// Emulator renders this to the terminal via ANSI escape codes.
+    vga_cols: u16 = 80,
+    vga_rows: u16 = 25,
+    vga_buffer: [2000]u16 = blk: {
+        @setEvalBranchQuota(10000);
+        var buf: [2000]u16 = undefined;
+        for (&buf) |*cell| cell.* = 0x0720;
+        break :blk buf;
+    },
+    vga_cursor_row: u16 = 0,
+    vga_cursor_col: u16 = 0,
+    vga_dirty: bool = true,
+    vga_prev: [2000]u16 = blk: {
+        @setEvalBranchQuota(10000);
+        var buf: [2000]u16 = undefined;
+        for (&buf) |*cell| cell.* = 0x0720;
+        break :blk buf;
+    },
+
+    // --- UART (port 0x00) — legacy terminal I/O ---
 
     /// UART transmit buffer (output to terminal).
     uart_tx: [256]u8 = std.mem.zeroes([256]u8),
@@ -65,10 +87,18 @@ pub const CPU = struct {
 
     // --- Keyboard (port 0x02) ---
 
-    /// Keyboard scan code buffer.
+    /// Keyboard ring buffer (emulator writes, CPU reads via IN).
     kbd_buffer: [256]u8 = std.mem.zeroes([256]u8),
     kbd_head: u8 = 0,
     kbd_tail: u8 = 0,
+
+    // --- Line buffer (ports 0x03/0x04) ---
+
+    /// Line buffer for command input (emulator handles editing).
+    line_buf: [128]u8 = std.mem.zeroes([128]u8),
+    line_len: u8 = 0,
+    line_read_pos: u8 = 0,
+    cmd_id: u8 = 0, // 0=none, 1=help, 2=clear, 3=reboot, 4=info, 5=dump, 6=halt, 7=unknown
 
     // =========================================================================
     // I/O Port Map
@@ -76,9 +106,13 @@ pub const CPU = struct {
     //
     // Port | Peripheral | Direction | Description
     // -----+------------+-----------+----------------------------------
-    // 0x00 | UART       | R/W       | Terminal I/O (IN=rx, OUT=tx)
+    // 0x00 | UART       | R/W       | Terminal I/O (legacy, IN=rx, OUT=tx)
     // 0x01 | Timer      | Read      | Cycle counter (low 16 bits)
-    // 0x02 | Keyboard   | Read      | Scan code (0 if empty)
+    // 0x02 | Keyboard   | Read      | Scan code (0 if empty, legacy)
+    // 0x03 | Line stat  | Read      | Command ID (0=none, 1-6=cmd, 7=unknown)
+    // 0x04 | Line read  | Read      | Next byte from line buffer (0=empty)
+    // 0x10 | VGA        | Write     | Character output (char in low byte)
+    // 0x11 | VGA ctrl   | Write     | Control: 0x0001=clear, 0x0002=flush
 
     // =========================================================================
     // Flag Bitmasks
@@ -210,8 +244,76 @@ pub const CPU = struct {
     /// Put a key into the keyboard buffer (scan code).
     /// Called by the debugger or host system when a key is pressed.
     pub fn putKey(self: *CPU, scancode: u8) void {
-        self.kbd_buffer[self.kbd_head] = scancode;
-        self.kbd_head +%= 1;
+        if (scancode == 0x0D) {
+            // Enter — null-terminate, parse, reset for next line
+            self.line_buf[self.line_len] = 0;
+            self.parseCommand();
+            self.line_read_pos = 0;
+            self.line_len = 0;
+            @memset(&self.line_buf, 0);
+            self.vgaPutChar(0x0A); // newline
+        } else if (scancode == 0x08) {
+            // Backspace — remove last char
+            if (self.line_len > 0) {
+                self.line_len -= 1;
+                self.line_buf[self.line_len] = 0;
+                // erase on VGA: move back, write space, move back
+                if (self.vga_cursor_col > 0) {
+                    self.vga_cursor_col -= 1;
+                } else if (self.vga_cursor_row > 0) {
+                    self.vga_cursor_row -= 1;
+                    self.vga_cursor_col = self.vga_cols - 1;
+                }
+                const idx = @as(u32, self.vga_cursor_row) * self.vga_cols + self.vga_cursor_col;
+                if (idx < self.vga_buffer.len) {
+                    self.vga_buffer[idx] = 0x0720; // space
+                }
+                self.vga_dirty = true;
+                self.uartWriteData(0x08);
+                self.uartWriteData(0x20);
+                self.uartWriteData(0x08);
+            }
+        } else if (scancode >= 0x20 and scancode < 0x7F) {
+            // Printable char — add to line buffer, echo to VGA
+            if (self.line_len < 127) {
+                self.line_buf[self.line_len] = scancode;
+                self.line_len += 1;
+                self.vgaPutChar(scancode);
+            }
+        }
+    }
+
+    /// Parse the line buffer and set cmd_id.
+    fn parseCommand(self: *CPU) void {
+        self.cmd_id = 0;
+        if (self.line_len == 0) return;
+
+        // Skip leading spaces
+        var start: u8 = 0;
+        while (start < self.line_len and self.line_buf[start] == ' ') : (start += 1) {}
+        if (start == self.line_len) return;
+
+        // Find end of first word
+        var end = start;
+        while (end < self.line_len and self.line_buf[end] != ' ') : (end += 1) {}
+        const cmd_len = end - start;
+
+        // Match commands
+        if (cmd_len == 4 and std.mem.eql(u8, self.line_buf[start..][0..4], "help")) {
+            self.cmd_id = 1;
+        } else if (cmd_len == 5 and std.mem.eql(u8, self.line_buf[start..][0..5], "clear")) {
+            self.cmd_id = 2;
+        } else if (cmd_len == 6 and std.mem.eql(u8, self.line_buf[start..][0..6], "reboot")) {
+            self.cmd_id = 3;
+        } else if (cmd_len == 4 and std.mem.eql(u8, self.line_buf[start..][0..4], "info")) {
+            self.cmd_id = 4;
+        } else if (cmd_len == 4 and std.mem.eql(u8, self.line_buf[start..][0..4], "dump")) {
+            self.cmd_id = 5;
+        } else if (cmd_len == 4 and std.mem.eql(u8, self.line_buf[start..][0..4], "halt")) {
+            self.cmd_id = 6;
+        } else {
+            self.cmd_id = 7; // unknown
+        }
     }
 
     /// Put a byte into the UART receive buffer.
@@ -231,15 +333,37 @@ pub const CPU = struct {
     }
 
     /// Flush all pending bytes from UART TX buffer and print to stderr.
+    /// Buffers all output and prints in one call to avoid garbled display.
     pub fn flushUartTx(self: *CPU) void {
+        var buf: [512]u8 = undefined;
+        var len: usize = 0;
         while (self.getUartTx()) |byte| {
             if (byte == '\n') {
-                std.debug.print("\n", .{});
+                if (len + 1 <= buf.len) {
+                    buf[len] = '\n';
+                    len += 1;
+                }
+            } else if (byte == '\r') {
+                // skip — \n already handles terminal line breaks
+            } else if (byte == 0x08) {
+                // backspace: move cursor back, space, back again
+                if (len + 3 <= buf.len) {
+                    buf[len] = 0x08;
+                    buf[len + 1] = ' ';
+                    buf[len + 2] = 0x08;
+                    len += 3;
+                }
             } else if (byte >= 0x20 and byte < 0x7F) {
-                std.debug.print("{c}", .{byte});
+                if (len < buf.len) {
+                    buf[len] = byte;
+                    len += 1;
+                }
             } else {
-                std.debug.print("\\x{X:0>2}", .{byte});
+                // non-printable: skip (or format as hex if needed)
             }
+        }
+        if (len > 0) {
+            std.debug.print("{s}", .{buf[0..len]});
         }
     }
 
@@ -278,6 +402,20 @@ pub const CPU = struct {
                 break :blk @intCast(scancode);
             } else 0,
 
+            // --- Line status (port 0x03) — read command ID, clears on read ---
+            0x03 => blk: {
+                const id = self.cmd_id;
+                self.cmd_id = 0;
+                break :blk id;
+            },
+
+            // --- Line read (port 0x04) — read next byte from line buffer ---
+            0x04 => if (self.line_read_pos < self.line_len) blk: {
+                const ch = self.line_buf[self.line_read_pos];
+                self.line_read_pos += 1;
+                break :blk ch;
+            } else 0,
+
             // Generic I/O port (0-255)
             else => if (port <= 0xFF) self.io_ports[port] else 0,
         };
@@ -289,6 +427,12 @@ pub const CPU = struct {
         switch (port) {
             // --- UART (port 0x00) — write char to terminal output buffer ---
             0x00 => self.uartWriteData(@intCast(value & 0xFF)),
+
+            // --- VGA char output (port 0x10) ---
+            0x10 => self.vgaPutChar(@intCast(value & 0xFF)),
+
+            // --- VGA control (port 0x11) ---
+            0x11 => self.vgaControl(value),
 
             // Timer and Keyboard are read-only — writes ignored
 
@@ -302,13 +446,107 @@ pub const CPU = struct {
     // =========================================================================
     // UART 16550 Helper Functions
     // =========================================================================
-    // UART Helper Functions
-    // =========================================================================
 
     /// Write a byte to UART transmit buffer.
     fn uartWriteData(self: *CPU, byte: u8) void {
         self.uart_tx[self.uart_tx_head] = byte;
         self.uart_tx_head +%= 1;
+    }
+
+    // =========================================================================
+    // VGA Helper Functions
+    // =========================================================================
+
+    /// Put a character to the VGA text buffer at the current cursor position.
+    /// Also mirrors to UART TX buffer so the emulator can print to stdout.
+    /// Handles CR (0x0D), LF (0x0A), printable chars, and scrolling.
+    fn vgaPutChar(self: *CPU, byte: u8) void {
+        // Mirror every VGA char to UART TX for terminal output
+        self.uartWriteData(byte);
+
+        switch (byte) {
+            0x0D => {
+                self.vga_cursor_col = 0;
+            },
+            0x0A => {
+                self.vga_cursor_row += 1;
+                if (self.vga_cursor_row >= self.vga_rows) {
+                    self.vgaScrollUp();
+                    self.vga_cursor_row = self.vga_rows - 1;
+                }
+            },
+            0x08 => {
+                // Backspace: move cursor back, clear character
+                if (self.vga_cursor_col > 0) {
+                    self.vga_cursor_col -= 1;
+                } else if (self.vga_cursor_row > 0) {
+                    self.vga_cursor_row -= 1;
+                    self.vga_cursor_col = self.vga_cols - 1;
+                }
+                const idx = @as(u32, self.vga_cursor_row) * self.vga_cols + self.vga_cursor_col;
+                if (idx < self.vga_buffer.len) {
+                    self.vga_buffer[idx] = 0x0720; // space
+                }
+            },
+            else => {
+                const idx = @as(u32, self.vga_cursor_row) * self.vga_cols + self.vga_cursor_col;
+                if (idx < self.vga_buffer.len) {
+                    self.vga_buffer[idx] = 0x0700 | @as(u16, byte);
+                }
+                self.vga_cursor_col += 1;
+                if (self.vga_cursor_col >= self.vga_cols) {
+                    self.vga_cursor_col = 0;
+                    self.vga_cursor_row += 1;
+                    if (self.vga_cursor_row >= self.vga_rows) {
+                        self.vgaScrollUp();
+                        self.vga_cursor_row = self.vga_rows - 1;
+                    }
+                }
+            },
+        }
+        self.vga_dirty = true;
+    }
+
+    /// Handle VGA control commands.
+    fn vgaControl(self: *CPU, cmd: u16) void {
+        switch (cmd) {
+            0x0001 => {
+                // Clear screen: fill buffer with spaces, reset cursor
+                for (&self.vga_buffer) |*cell| cell.* = 0x0720;
+                self.vga_cursor_row = 0;
+                self.vga_cursor_col = 0;
+            },
+            0x0002 => {
+                // Flush: mark dirty so emulator re-renders
+                self.vga_dirty = true;
+            },
+            else => {},
+        }
+    }
+
+    /// Scroll VGA buffer up by one row (row 1→0, row 2→1, ..., clear last row).
+    fn vgaScrollUp(self: *CPU) void {
+        const cols = self.vga_cols;
+        const rows = self.vga_rows;
+        const row_bytes: usize = cols;
+        // Move rows 1..N-1 to 0..N-2
+        var row: u16 = 1;
+        while (row < rows) : (row += 1) {
+            const src_start = @as(u32, row) * cols;
+            const dst_start = @as(u32, row - 1) * cols;
+            var col: u16 = 0;
+            while (col < cols) : (col += 1) {
+                _ = row_bytes;
+                self.vga_buffer[dst_start + col] = self.vga_buffer[src_start + col];
+            }
+        }
+        // Clear last row
+        const last_start = @as(u32, rows - 1) * cols;
+        var col: u16 = 0;
+        while (col < cols) : (col += 1) {
+            self.vga_buffer[last_start + col] = 0x0720;
+        }
+        self.vga_dirty = true;
     }
 
     // =========================================================================
@@ -335,8 +573,20 @@ pub const CPU = struct {
         // Decode instruction size and opcode.
         // Bits 25:24 = mode field. In encode32, mode is always 01 (Imm).
         // In encode16, bits 7:6 are mode but bits 25:24 are undefined/zero.
+        //
+        // BUG FIX: When a 16-bit instruction is followed by a 32-bit one,
+        // bits 25:24 of raw32 come from the NEXT instruction's byte 1.
+        // All 32-bit instructions have mode=01 at bits 25:24, so the 16-bit
+        // instruction gets misidentified as 32-bit.
+        //
+        // Fix: 16-bit ALU instructions always have opcode 0xA at bits 15:12.
+        // 32-bit instructions have their opcode at bits 31:28, and bits 15:12
+        // are part of the immediate field (never 0xA in practice for this ISA).
+        // So if bits 15:12 == 0xA, it's definitely a 16-bit ALU instruction.
         const hi_mode: u2 = @intCast((raw32 >> 24) & 0x3);
-        const is_32bit = hi_mode == 0b01;
+        const lo_opcode: u4 = @intCast((lo16 >> 12) & 0xF);
+        const is_16bit_alu = (lo_opcode == 0xA);
+        const is_32bit = if (is_16bit_alu) false else (hi_mode == 0b01);
 
         // Opcode extraction depends on instruction format:
         //   32-bit: bits 31:28 of raw32

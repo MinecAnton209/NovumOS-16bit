@@ -311,35 +311,56 @@ pub const Disassembler = struct {
     }
 
     /// Disassemble a range of memory and print to stderr.
+    /// Collapses repeated identical instructions (e.g. NOP runs) into a single range line.
     pub fn dumpDisassembly(self: *Disassembler, start: u16, end: u16) void {
         var addr = start;
         while (addr < end) {
             const result = self.disassemble(addr);
-            std.debug.print("  0x{X:0>4}: ", .{addr});
-
-            if (result.size == 4) {
-                const lo = self.readWord(addr);
-                const hi = self.readWord(addr +% 2);
-                std.debug.print("{X:0>2} {X:0>2} {X:0>2} {X:0>2}  ", .{
-                    lo & 0xFF, (lo >> 8) & 0xFF, hi & 0xFF, (hi >> 8) & 0xFF,
-                });
-            } else {
-                const lo = self.readWord(addr);
-                std.debug.print("{X:0>2} {X:0>2}        ", .{
-                    lo & 0xFF, (lo >> 8) & 0xFF,
-                });
-            }
-
             const text = result.text;
             var len: usize = 0;
             while (len < text.len and text[len] != 0) : (len += 1) {}
-            if (len > 0) {
-                std.debug.print("{s}", .{text[0..len]});
-            } else {
-                std.debug.print("???", .{});
+            const text_str = if (len > 0) text[0..len] else "???";
+
+            // Count how many consecutive instructions have the same text
+            var count: u16 = 1;
+            var scan_addr = addr +% result.size;
+            while (scan_addr < end and count < 256) {
+                const next = self.disassemble(scan_addr);
+                var next_len: usize = 0;
+                while (next_len < next.text.len and next.text[next_len] != 0) : (next_len += 1) {}
+                const next_str = if (next_len > 0) next.text[0..next_len] else "???";
+                if (!std.mem.eql(u8, text_str, next_str)) break;
+                count += 1;
+                scan_addr +%= next.size;
             }
-            std.debug.print("\n", .{});
-            addr +%= result.size;
+
+            if (count >= 3) {
+                // Collapse: show first, "... (N more)", then resume after last
+                const range_end = scan_addr -% result.size;
+                std.debug.print("  0x{X:0>4} - 0x{X:0>4}: {s}\n", .{ addr, range_end, text_str });
+                const old = addr;
+                addr = scan_addr;
+                if (addr <= old) break;
+            } else {
+                // Show normally
+                std.debug.print("  0x{X:0>4}: ", .{addr});
+                if (result.size == 4) {
+                    const lo = self.readWord(addr);
+                    const hi = self.readWord(addr +% 2);
+                    std.debug.print("{X:0>2} {X:0>2} {X:0>2} {X:0>2}  ", .{
+                        lo & 0xFF, (lo >> 8) & 0xFF, hi & 0xFF, (hi >> 8) & 0xFF,
+                    });
+                } else {
+                    const lo = self.readWord(addr);
+                    std.debug.print("{X:0>2} {X:0>2}        ", .{
+                        lo & 0xFF, (lo >> 8) & 0xFF,
+                    });
+                }
+                std.debug.print("{s}\n", .{text_str});
+                const old = addr;
+                addr +%= result.size;
+                if (addr <= old) break;
+            }
         }
     }
 };

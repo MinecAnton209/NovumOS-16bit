@@ -40,9 +40,12 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                // Import codegen module so emulator can use ISA.encode functions
-                // (needed by CPU instruction decoding in cpu.zig)
                 .{ .name = "codegen", .module = codegen_exe.root_module },
+                .{ .name = "config", .module = b.createModule(.{
+                    .root_source_file = b.path("src/config.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                }) },
             },
         }),
     });
@@ -65,6 +68,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "codegen", .module = codegen_exe.root_module },
+                .{ .name = "versioning", .module = b.createModule(.{
+                    .root_source_file = b.path("src/versioning.zig"),
+                    .target = target,
+                    .optimize = optimize,
+                }) },
             },
         }),
     });
@@ -75,13 +83,14 @@ pub fn build(b: *std.Build) void {
     kernel_step.dependOn(&run_kernel_writer.step);
     run_kernel_writer.step.dependOn(b.getInstallStep());
 
-    // `zig build run` — build kernel then run in emulator
-    const run_kernel = b.addRunArtifact(emulator_exe);
-    run_kernel.addArg("-f");
-    run_kernel.addArg("build/kernel.bin");
-    run_kernel.addArg("-c");
-    run_kernel.addArg("100000");
-    const run_step = b.step("run", "Run kernel in emulator");
+    // `zig build run` — build kernel then run in interactive mode
+    // Use addSystemCommand to inherit console (addRunArtifact pipes stdin)
+    const run_kernel = b.addSystemCommand(&.{
+        "zig-out/bin/emulator.exe",
+        "-f", "build/kernel.bin",
+        "-i",
+    });
+    const run_step = b.step("run", "Run kernel in emulator (interactive mode)");
     run_step.dependOn(&run_kernel.step);
     run_step.dependOn(&run_kernel_writer.step);
     run_kernel.step.dependOn(b.getInstallStep());
