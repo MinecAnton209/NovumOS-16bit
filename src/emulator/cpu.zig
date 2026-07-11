@@ -251,6 +251,7 @@ pub const CPU = struct {
             self.line_read_pos = 0;
             self.line_len = 0;
             @memset(&self.line_buf, 0);
+            self.vgaPutChar(0x0D); // carriage return
             self.vgaPutChar(0x0A); // newline
         } else if (scancode == 0x08) {
             // Backspace — remove last char
@@ -286,7 +287,10 @@ pub const CPU = struct {
     /// Parse the line buffer and set cmd_id.
     fn parseCommand(self: *CPU) void {
         self.cmd_id = 0;
-        if (self.line_len == 0) return;
+        if (self.line_len == 0) {
+            self.cmd_id = 7; // treat empty as unknown → kernel re-prompts
+            return;
+        }
 
         // Skip leading spaces
         var start: u8 = 0;

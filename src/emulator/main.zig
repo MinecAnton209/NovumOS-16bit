@@ -155,11 +155,10 @@ fn interactiveMode(cpu: *CPU, firmware: []const u8) !void {
     // Clear UART TX from firmware load
     cpu.flushUartTx();
 
-    var poll_count: u32 = 0;
     var key_count: u32 = 0;
     while (!cpu.halted) {
-        // Poll keyboard input (non-blocking)
-        if (term.readKey()) |key| {
+        // Drain all pending keyboard input first
+        while (term.readKey()) |key| {
             key_count += 1;
             if (key.ctrl and (key.ascii == 0x03 or key.ascii == 0x1A)) {
                 std.debug.print("\n[exited by user]\n", .{});
@@ -171,18 +170,34 @@ fn interactiveMode(cpu: *CPU, firmware: []const u8) !void {
             }
         }
 
-        // Execute one instruction
-        try cpu.step();
-        cpu.cycle_count += 1;
-        poll_count += 1;
+        // Execute a batch of instructions for performance.
+        // Commands like dump may need 100+ instructions — running them
+        // one at a time makes output appear character by character.
+        var batch: u32 = 0;
+        while (batch < 500 and !cpu.halted) : (batch += 1) {
+            try cpu.step();
+            cpu.cycle_count += 1;
+
+            // Check for new input every ~50 instructions so that
+            // Enter is picked up promptly and not delayed by the batch.
+            if (batch % 50 == 0) {
+                if (term.readKey()) |key| {
+                    key_count += 1;
+                    if (key.ctrl and (key.ascii == 0x03 or key.ascii == 0x1A)) {
+                        std.debug.print("\n[exited by user]\n", .{});
+                        return;
+                    }
+                    cpu.putKey(key.ascii);
+                    if (config.Debug.key_debug) {
+                        std.debug.print("[key: 0x{X:0>2} '{c}' count={d}]\n", .{ key.ascii, key.ascii, key_count });
+                    }
+                }
+            }
+        }
 
         // Flush any pending UART TX output to terminal
         // (vgaPutChar mirrors port 0x10 writes to uart_tx)
         cpu.flushUartTx();
-
-        if (config.Debug.poll_interval > 0 and poll_count % config.Debug.poll_interval == 0) {
-            std.debug.print("[poll #{d} keys={d}]\n", .{ poll_count, key_count });
-        }
     }
 
     std.debug.print("\n[CPU halted after {d} cycles]\n", .{cpu.cycle_count});
