@@ -601,3 +601,150 @@ test "disasm: sequence — MOV, MOV, SUB, HLT" {
     try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(8, 12));
     try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(10, 12));
 }
+
+// =============================================================================
+// 16-bit CondJump Disassembly — All Conditions
+// =============================================================================
+
+fn condWord16(cond: ISA.CondJump) u16 {
+    return (@as(u16, @intFromEnum(ISA.Opcode.CondJump)) << 12) |
+        (@as(u16, @intFromEnum(cond)) << 8) |
+        (@as(u16, @intFromEnum(ISA.AddrMode.Imm)) << 6);
+}
+
+test "disasm: JC 0x0020 16-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write16(&mem, 0, condWord16(.JC));
+    write16(&mem, 2, 0x0020);
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqual(@as(u8, 4), r.size);
+    try std.testing.expectEqualStrings("JC 0x0020", getText(&r));
+}
+
+test "disasm: JNC 0x0030 16-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write16(&mem, 0, condWord16(.JNC));
+    write16(&mem, 2, 0x0030);
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("JNC 0x0030", getText(&r));
+}
+
+test "disasm: JS 0x0040 16-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write16(&mem, 0, condWord16(.JS));
+    write16(&mem, 2, 0x0040);
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("JS 0x0040", getText(&r));
+}
+
+test "disasm: JNS 0x0080 16-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write16(&mem, 0, condWord16(.JNS));
+    write16(&mem, 2, 0x0080);
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("JNS 0x0080", getText(&r));
+}
+
+// =============================================================================
+// Additional 32-bit Disassembly Tests
+// =============================================================================
+
+test "disasm: JMP 0x0050 32-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write32(&mem, 0, ISA.encode32(.JMP, .AX, 0x0050));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqual(@as(u8, 4), r.size);
+    try std.testing.expectEqualStrings("JMP 0x0050", getText(&r));
+}
+
+// =============================================================================
+// Additional MOV 32-bit imm Disassembly for all registers
+// =============================================================================
+
+test "disasm: MOV BX, 0x1234 32-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write32(&mem, 0, ISA.encode32(.MOV, .BX, 0x1234));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("MOV BX, 0x1234", getText(&r));
+}
+
+test "disasm: MOV CX, 0xABCD 32-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write32(&mem, 0, ISA.encode32(.MOV, .CX, 0xABCD));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("MOV CX, 0xABCD", getText(&r));
+}
+
+test "disasm: MOV DX, 0xFFFF 32-bit" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write32(&mem, 0, ISA.encode32(.MOV, .DX, 0xFFFF));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqualStrings("MOV DX, 0xFFFF", getText(&r));
+}
+
+// =============================================================================
+// Additional PUSH/POP Disassembly
+// =============================================================================
+
+test "disasm: PUSH CX" {
+    var mem: [4]u8 = std.mem.zeroes([4]u8);
+    write16(&mem, 0, ISA.encodePushPop(.PUSH, .CX));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqual(@as(u8, 2), r.size);
+    try std.testing.expectEqualStrings("PUSH CX", getText(&r));
+}
+
+test "disasm: POP DX" {
+    var mem: [4]u8 = std.mem.zeroes([4]u8);
+    write16(&mem, 0, ISA.encodePushPop(.POP, .DX));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqual(@as(u8, 2), r.size);
+    try std.testing.expectEqualStrings("POP DX", getText(&r));
+}
+
+// =============================================================================
+// countCollapsed Boundary Cases
+// =============================================================================
+
+test "disasm: countCollapsed at end boundary" {
+    var mem: [256]u8 = std.mem.zeroes([256]u8);
+    write16(&mem, 0, ISA.encode16(.NOP, .AX, .AX, .RegReg));
+    var dis = Disassembler.init(&mem);
+    try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(0, 2));
+    try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(2, 2));
+}
+
+test "disasm: countCollapsed single instruction" {
+    var mem: [256]u8 = std.mem.zeroes([256]u8);
+    write16(&mem, 0, ISA.encode16(.HLT, .AX, .AX, .RegReg));
+    var dis = Disassembler.init(&mem);
+    try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(0, 2));
+}
+
+test "disasm: PUSH DX then POP CX not collapsed" {
+    var mem: [256]u8 = std.mem.zeroes([256]u8);
+    write16(&mem, 0, ISA.encodePushPop(.PUSH, .DX));
+    write16(&mem, 2, ISA.encodePushPop(.POP, .CX));
+    var dis = Disassembler.init(&mem);
+    try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(0, 4));
+    try std.testing.expectEqual(@as(u16, 1), dis.countCollapsed(2, 4));
+}
+
+test "disasm: MOV AX, [CX] 16-bit indirect" {
+    var mem: [16]u8 = std.mem.zeroes([16]u8);
+    write16(&mem, 0, ISA.encode16(.MOV, .AX, .CX, .Indirect));
+    var dis = Disassembler.init(&mem);
+    const r = dis.disassemble(0);
+    try std.testing.expectEqual(@as(u8, 2), r.size);
+    try std.testing.expectEqualStrings("MOV AX, [CX]", getText(&r));
+}

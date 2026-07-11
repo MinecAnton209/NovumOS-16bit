@@ -388,3 +388,89 @@ test "roundtrip: encodeAlu ADD → bit fields match" {
     try std.testing.expectEqual(@intFromEnum(ISA.Register.AX), @as(u2, @intCast((inst >> 6) & 0x3)));
     try std.testing.expectEqual(@intFromEnum(ISA.Register.BX), @as(u2, @intCast((inst >> 4) & 0x3)));
 }
+
+// =============================================================================
+// encodeAluImm — 32-bit ALU with Immediate Encoding
+// =============================================================================
+
+test "encodeAluImm ADD AX, 0x0042" {
+    const inst = encodeAluImm(.ADD, .AX, 0x0042);
+    const opcode: u4 = @intCast((inst >> 28) & 0xF);
+    const alu_op: u4 = @intCast((inst >> 24) & 0xF);
+    const dst: u2 = @intCast((inst >> 22) & 0x3);
+    const imm: u16 = @intCast((inst >> 6) & 0xFFFF);
+    try std.testing.expectEqual(@intFromEnum(ISA.Opcode.ALU), opcode);
+    try std.testing.expectEqual(@intFromEnum(ISA.AluOp.ADD), alu_op);
+    try std.testing.expectEqual(@intFromEnum(ISA.Register.AX), dst);
+    try std.testing.expectEqual(@as(u16, 0x0042), imm);
+}
+
+test "encodeAluImm SUB BX, 0x0010" {
+    const inst = encodeAluImm(.SUB, .BX, 0x0010);
+    const opcode: u4 = @intCast((inst >> 28) & 0xF);
+    const alu_op: u4 = @intCast((inst >> 24) & 0xF);
+    const dst: u2 = @intCast((inst >> 22) & 0x3);
+    try std.testing.expectEqual(@intFromEnum(ISA.Opcode.ALU), opcode);
+    try std.testing.expectEqual(@intFromEnum(ISA.AluOp.SUB), alu_op);
+    try std.testing.expectEqual(@intFromEnum(ISA.Register.BX), dst);
+}
+
+// =============================================================================
+// Additional encodePushPop Tests
+// =============================================================================
+
+test "encodePushPop PUSH DX" {
+    const inst = encodePushPop(.PUSH, .DX);
+    const opcode: u4 = @intCast((inst >> 12) & 0xF);
+    const reg: u2 = @intCast((inst >> 10) & 0x3);
+    const stack_op: u2 = @intCast((inst >> 8) & 0x3);
+    try std.testing.expectEqual(@intFromEnum(ISA.Opcode.PushPop), opcode);
+    try std.testing.expectEqual(@intFromEnum(ISA.Register.DX), reg);
+    try std.testing.expectEqual(@intFromEnum(ISA.StackOp.PUSH), stack_op);
+}
+
+test "encodePushPop POP CX" {
+    const inst = encodePushPop(.POP, .CX);
+    // opcode=PushPop(0xC)<<12 | reg=CX(2)<<10 | stack_op=POP(1)<<8
+    try std.testing.expectEqual(@as(u16, 0xC900), inst);
+}
+
+// =============================================================================
+// Additional encode16 Tests
+// =============================================================================
+
+test "encode16 MOV indirect CX, AX" {
+    const inst = encode16(.MOV, .CX, .AX, .Indirect);
+    const opcode: u4 = @intCast((inst >> 12) & 0xF);
+    const dst: u2 = @intCast((inst >> 10) & 0x3);
+    const src: u2 = @intCast((inst >> 8) & 0x3);
+    const mode: u2 = @intCast((inst >> 6) & 0x3);
+    try std.testing.expectEqual(@intFromEnum(ISA.Opcode.MOV), opcode);
+    try std.testing.expectEqual(@intFromEnum(ISA.Register.CX), dst);
+    try std.testing.expectEqual(@intFromEnum(ISA.Register.AX), src);
+    try std.testing.expectEqual(@intFromEnum(ISA.AddrMode.Indirect), mode);
+}
+
+test "encode16 MOV indirect-offset BX, DX" {
+    const inst = encode16(.MOV, .BX, .DX, .IndirectOff);
+    const mode: u2 = @intCast((inst >> 6) & 0x3);
+    try std.testing.expectEqual(@intFromEnum(ISA.AddrMode.IndirectOff), mode);
+}
+
+// =============================================================================
+// Firmware Generator Smoke Test
+// =============================================================================
+
+test "firmware starts with NOP" {
+    const fw = ISA.firmware;
+    // First word should be NOP (0x0000)
+    try std.testing.expectEqual(@as(u8, 0x00), fw[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), fw[1]);
+}
+
+test "firmware ends with HLT" {
+    const fw = ISA.firmware;
+    // HLT (0x7000) is at byte offset 68 (after MOV imm at 64 + last w32)
+    try std.testing.expectEqual(@as(u8, 0x00), fw[68]);
+    try std.testing.expectEqual(@as(u8, 0x70), fw[69]);
+}
