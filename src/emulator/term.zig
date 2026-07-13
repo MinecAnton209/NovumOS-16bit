@@ -175,33 +175,52 @@ pub const Term = struct {
         fd: i32,
         old_termios: std.posix.termios,
 
-        // Zig 0.16.0 removed termios flag constants from std.posix;
-        // define the standard POSIX values here (Linux x86_64).
-        const BRKINT = 0x0002;
-        const ICRNL = 0x0100;
-        const INPCK = 0x0010;
-        const ISTRIP = 0x0020;
-        const IXON = 0x0400;
-        const OPOST = 0x0001;
-        const CS8 = 0x0030;
-        const ECHO = 0x0008;
-        const ICANON = 0x0002;
-        const IEXTEN = 0x8000;
-        const ISIG = 0x0001;
-        const VMIN: u8 = 6;
-        const VTIME: u8 = 5;
+        /// Set terminal to raw mode.
+        /// Zig 0.16.0 removed termios bitmask constants; on Linux the flag
+        /// types are packed structs (bool fields), on other POSIX they are
+        /// plain integers.  Handle both via comptime dispatch.
+        fn setRaw(raw: *std.posix.termios) void {
+            const I = @TypeOf(raw.iflag);
+            if (@typeInfo(I) == .@"struct") {
+                raw.iflag.BRKINT = false;
+                raw.iflag.ICRNL = false;
+                raw.iflag.INPCK = false;
+                raw.iflag.ISTRIP = false;
+                raw.iflag.IXON = false;
+            } else {
+                raw.iflag = @bitCast(@as(u32, @bitCast(raw.iflag)) & ~@as(u32, 0x0002 | 0x0100 | 0x0010 | 0x0020 | 0x0400));
+            }
+            const O = @TypeOf(raw.oflag);
+            if (@typeInfo(O) == .@"struct") {
+                raw.oflag.OPOST = false;
+            } else {
+                raw.oflag = @bitCast(@as(u32, @bitCast(raw.oflag)) & ~@as(u32, 0x0001));
+            }
+            const C = @TypeOf(raw.cflag);
+            if (@typeInfo(C) == .@"struct") {
+                raw.cflag.CSIZE = .CS8;
+            } else {
+                raw.cflag = @bitCast(@as(u32, @bitCast(raw.cflag)) | @as(u32, 0x0030));
+            }
+            const L = @TypeOf(raw.lflag);
+            if (@typeInfo(L) == .@"struct") {
+                raw.lflag.ECHO = false;
+                raw.lflag.ICANON = false;
+                raw.lflag.IEXTEN = false;
+                raw.lflag.ISIG = false;
+            } else {
+                raw.lflag = @bitCast(@as(u32, @bitCast(raw.lflag)) & ~@as(u32, 0x0008 | 0x0002 | 0x8000 | 0x0001));
+            }
+        }
 
         fn init() !PosixTerm {
             const fd = std.posix.STDIN_FILENO;
             const old = try std.posix.tcgetattr(fd);
 
             var raw = old;
-            raw.iflag &= ~@as(u32, BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-            raw.oflag &= ~@as(u32, OPOST);
-            raw.cflag |= @as(u32, CS8);
-            raw.lflag &= ~@as(u32, ECHO | ICANON | IEXTEN | ISIG);
-            raw.cc[@intCast(VMIN)] = 0;
-            raw.cc[@intCast(VTIME)] = 0;
+            setRaw(&raw);
+            raw.cc[6] = 0;  // VMIN
+            raw.cc[5] = 0;  // VTIME
 
             try std.posix.tcsetattr(fd, std.posix.TCSA.FLUSH, raw);
 
