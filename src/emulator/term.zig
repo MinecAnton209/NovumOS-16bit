@@ -175,17 +175,33 @@ pub const Term = struct {
         fd: i32,
         old_termios: std.posix.termios,
 
+        // Zig 0.16.0 removed termios flag constants from std.posix;
+        // define the standard POSIX values here (Linux x86_64).
+        const BRKINT = 0x0002;
+        const ICRNL = 0x0100;
+        const INPCK = 0x0010;
+        const ISTRIP = 0x0020;
+        const IXON = 0x0400;
+        const OPOST = 0x0001;
+        const CS8 = 0x0030;
+        const ECHO = 0x0008;
+        const ICANON = 0x0002;
+        const IEXTEN = 0x8000;
+        const ISIG = 0x0001;
+        const VMIN: u8 = 6;
+        const VTIME: u8 = 5;
+
         fn init() !PosixTerm {
             const fd = std.posix.STDIN_FILENO;
             const old = try std.posix.tcgetattr(fd);
 
             var raw = old;
-            raw.iflag &= ~@as(u32, std.posix.BRKINT | std.posix.ICRNL | std.posix.INPCK | std.posix.ISTRIP | std.posix.IXON);
-            raw.oflag &= ~@as(u32, std.posix.OPOST);
-            raw.cflag |= @as(u32, std.posix.CS8);
-            raw.lflag &= ~@as(u32, std.posix.ECHO | std.posix.ICANON | std.posix.IEXTEN | std.posix.ISIG);
-            raw.cc[@intCast(std.posix.VMIN)] = 0;
-            raw.cc[@intCast(std.posix.VTIME)] = 0;
+            raw.iflag &= ~@as(u32, BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+            raw.oflag &= ~@as(u32, OPOST);
+            raw.cflag |= @as(u32, CS8);
+            raw.lflag &= ~@as(u32, ECHO | ICANON | IEXTEN | ISIG);
+            raw.cc[@intCast(VMIN)] = 0;
+            raw.cc[@intCast(VTIME)] = 0;
 
             try std.posix.tcsetattr(fd, std.posix.TCSA.FLUSH, raw);
 
