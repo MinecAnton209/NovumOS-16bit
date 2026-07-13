@@ -219,8 +219,8 @@ pub const Term = struct {
 
             var raw = old;
             setRaw(&raw);
-            raw.cc[6] = 0;  // VMIN
-            raw.cc[5] = 0;  // VTIME
+            raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
+            raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
 
             try std.posix.tcsetattr(fd, std.posix.TCSA.FLUSH, raw);
 
