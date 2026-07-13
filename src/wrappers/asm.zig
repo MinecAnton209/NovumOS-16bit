@@ -108,21 +108,6 @@ pub fn neg(dst: ISA.Register) u16 {
     return ISA.encodeAlu(.NEG, dst, .AX);
 }
 
-/// XCHG dst, src — Swap values in dst and src registers
-pub fn xchg(dst: ISA.Register, src: ISA.Register) u16 {
-    return ISA.encodeAlu(.XCHG, dst, src);
-}
-
-/// ADC dst, src — dst = dst + src + Carry
-pub fn adc(dst: ISA.Register, src: ISA.Register) u16 {
-    return ISA.encodeAlu(.ADC, dst, src);
-}
-
-/// SBB dst, src — dst = dst - src - Carry
-pub fn sbb(dst: ISA.Register, src: ISA.Register) u16 {
-    return ISA.encodeAlu(.SBB, dst, src);
-}
-
 /// TEST dst, src — Bitwise AND (result discarded, flags only)
 pub fn test_(dst: ISA.Register, src: ISA.Register) u16 {
     return ISA.encodeAlu(.TEST, dst, src);

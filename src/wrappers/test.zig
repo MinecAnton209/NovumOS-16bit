@@ -53,62 +53,47 @@ test "cmp generates correct u16" {
 
 test "and generates correct u16" {
     const result = asm_.@"and"(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA610), result);
+    try std.testing.expectEqual(@as(u16, 0xA410), result);
 }
 
 test "or generates correct u16" {
     const result = asm_.@"or"(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA710), result);
+    try std.testing.expectEqual(@as(u16, 0xA510), result);
 }
 
 test "xor generates correct u16" {
     const result = asm_.xor(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA810), result);
+    try std.testing.expectEqual(@as(u16, 0xA610), result);
 }
 
 test "shl generates correct u16" {
     const result = asm_.shl(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA910), result);
+    try std.testing.expectEqual(@as(u16, 0xA710), result);
 }
 
 test "shr generates correct u16" {
     const result = asm_.shr(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xAA10), result);
+    try std.testing.expectEqual(@as(u16, 0xA810), result);
 }
 
 test "inc generates correct u16" {
     const result = asm_.inc(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAB00), result);
+    try std.testing.expectEqual(@as(u16, 0xA900), result);
 }
 
 test "dec generates correct u16" {
     const result = asm_.dec(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAC00), result);
+    try std.testing.expectEqual(@as(u16, 0xA800), result);
 }
 
 test "not generates correct u16" {
     const result = asm_.not(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAD00), result);
+    try std.testing.expectEqual(@as(u16, 0xAB00), result);
 }
 
 test "neg generates correct u16" {
     const result = asm_.neg(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAE00), result);
-}
-
-test "xchg generates correct u16" {
-    const result = asm_.xchg(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xAF10), result);
-}
-
-test "adc generates correct u16" {
-    const result = asm_.adc(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA410), result);
-}
-
-test "sbb generates correct u16" {
-    const result = asm_.sbb(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA510), result);
+    try std.testing.expectEqual(@as(u16, 0xAC00), result);
 }
 
 test "test generates correct u16" {
@@ -325,9 +310,6 @@ test "ALU operations pattern" {
         asm_.dec(.AX),
         asm_.not(.AX),
         asm_.neg(.AX),
-        asm_.xchg(.AX, .BX),
-        asm_.adc(.AX, .BX),
-        asm_.sbb(.AX, .BX),
         asm_.cmp(.AX, .BX),
         asm_.test_(.AX, .BX),
     };

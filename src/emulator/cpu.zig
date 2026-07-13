@@ -191,7 +191,7 @@ pub const CPU = struct {
     }
 
     /// Set or clear the Carry (C) flag.
-    /// Used by ADD, SUB, ADC, SBB, INC, DEC, NEG, SHL, SHR, CMP, TEST.
+    /// Used by ADD, SUB, INC, DEC, NEG, SHL, SHR, CMP.
     pub fn setCarry(self: *CPU, carry: bool) void {
         if (carry) {
             self.flags |= CARRY_FLAG;
@@ -200,7 +200,7 @@ pub const CPU = struct {
         }
     }
 
-    /// Read the Carry (C) flag — used by JC, JNC, ADC, SBB.
+    /// Read the Carry (C) flag — used by JC, JNC.
     pub fn getCarry(self: *CPU) bool {
         return self.flags & CARRY_FLAG != 0;
     }
@@ -940,18 +940,17 @@ pub const CPU = struct {
     ///   SUB  — dst = dst - src, set Carry on borrow
     ///   CMP  — same as SUB but result is discarded (flags only)
     ///   TEST — dst AND src, result discarded, flags only
-    ///   ADC  — dst = dst + src + Carry (add with carry)
-    ///   SBB  — dst = dst - src - Carry (subtract with borrow)
     ///   AND  — dst = dst AND src
     ///   OR   — dst = dst OR src
     ///   XOR  — dst = dst XOR src
-    ///   SHL  — dst = dst << src (shift left by count)
-    ///   SHR  — dst = dst >> src (shift right by count)
+    ///   SHL  — dst = dst << count
+    ///   SHR  — dst = dst >> count
     ///   INC  — dst = dst + 1
     ///   DEC  — dst = dst - 1
     ///   NOT  — dst = NOT dst (bitwise complement)
     ///   NEG  — dst = 0 - dst (two's complement negate)
-    ///   XCHG — swap dst and src values (no flags changed)
+    ///   MUL  — dst = dst * src (signed multiply) — planned
+    ///   DIV  — dst = dst / src (signed divide) — planned
     fn executeAlu(self: *CPU, alu_op: ISA.AluOp, dst: ISA.Register, src: ISA.Register) void {
         const a = self.getReg(dst);
         const b = self.getReg(src);
@@ -981,26 +980,6 @@ pub const CPU = struct {
                 // Bitwise AND without storing result (flags only)
                 const result = a & b;
                 self.setCarry(false);
-                self.updateFlags(result);
-            },
-            .ADC => {
-                // Add with carry: dst = dst + src + Carry
-                // Carry is set if either addition step overflows
-                const carry_val: u16 = if (self.getCarry()) 1 else 0;
-                const result1, const carry1 = @addWithOverflow(a, b);
-                const result, const carry2 = @addWithOverflow(result1, carry_val);
-                self.setReg(dst, result);
-                self.setCarry(carry1 != 0 or carry2 != 0);
-                self.updateFlags(result);
-            },
-            .SBB => {
-                // Subtract with borrow: dst = dst - src - Carry
-                // Carry is set if either subtraction underflows
-                const carry_val: u16 = if (self.getCarry()) 1 else 0;
-                const result1, const borrow1 = @subWithOverflow(a, b);
-                const result, const borrow2 = @subWithOverflow(result1, carry_val);
-                self.setReg(dst, result);
-                self.setCarry(borrow1 != 0 or borrow2 != 0);
                 self.updateFlags(result);
             },
             .AND => {
@@ -1065,11 +1044,13 @@ pub const CPU = struct {
                 self.setCarry(result != 0);
                 self.updateFlags(result);
             },
-            .XCHG => {
-                // Exchange values between two registers (no flags affected)
-                const temp = a;
-                self.setReg(dst, b);
-                self.setReg(src, temp);
+            .MUL => {
+                // Signed multiply — not yet implemented
+                @panic("MUL not implemented");
+            },
+            .DIV => {
+                // Signed divide — not yet implemented
+                @panic("DIV not implemented");
             },
         }
     }

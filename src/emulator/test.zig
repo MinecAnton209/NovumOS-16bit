@@ -248,46 +248,6 @@ test "NEG reg" {
 // ALU Exchange Test
 // =============================================================================
 
-// XCHG AX, BX — swap register values
-test "XCHG reg, reg" {
-    var cpu = CPU{};
-    cpu.ax = 0x1234;
-    cpu.bx = 0x5678;
-    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XCHG, .AX, .BX));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x5678), cpu.ax);
-    try std.testing.expectEqual(@as(u16, 0x1234), cpu.bx);
-}
-
-// =============================================================================
-// ALU Add-with-Carry / Subtract-with-Borrow Tests
-// =============================================================================
-
-// ADC AX, BX — AX = AX + BX + Carry = 1 + 2 + 1 = 4
-test "ADC with carry" {
-    var cpu = CPU{};
-    cpu.ax = 0x0001;
-    cpu.bx = 0x0002;
-    cpu.flags |= CPU.CARRY_FLAG;
-    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADC, .AX, .BX));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x0004), cpu.ax);
-}
-
-// SBB AX, BX — AX = AX - BX - Carry = 5 - 2 - 1 = 2
-test "SBB with borrow" {
-    var cpu = CPU{};
-    cpu.ax = 0x0005;
-    cpu.bx = 0x0002;
-    cpu.flags |= CPU.CARRY_FLAG;
-    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SBB, .AX, .BX));
-
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x0002), cpu.ax);
-}
-
 // =============================================================================
 // Stack Tests (PUSH/POP)
 // =============================================================================
@@ -673,46 +633,6 @@ test "SUB: zero flag" {
     try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
     try std.testing.expect(cpu.getZero());
     try std.testing.expect(!cpu.getCarry());
-}
-
-test "ADC: add with carry set" {
-    var cpu = CPU{};
-    // Load all registers with 32-bit MOVs first (avoids raw32 lookahead issue
-    // where a 16-bit ALU instruction followed by a 32-bit MOV gets misinterpreted)
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0xFFFF));
-    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0001));
-    writeInstruction32(&cpu.memory, 8, ISA.encode32(.MOV, .CX, 0x0005));
-    // ADD AX, BX: 0xFFFF + 0x0001 = 0x0000, sets Carry=1
-    writeInstruction(&cpu.memory, 12, ISA.encodeAlu(.ADD, .AX, .BX));
-    // ADC AX, CX: 0x0000 + 0x0005 + 1 = 0x0006
-    writeInstruction(&cpu.memory, 14, ISA.encodeAlu(.ADC, .AX, .CX));
-    writeInstruction(&cpu.memory, 16, 0x7000);
-
-    _ = try cpu.run(100);
-    try std.testing.expect(cpu.halted);
-    try std.testing.expectEqual(@as(u16, 0x0006), cpu.ax);
-}
-
-test "SBB: subtract with borrow" {
-    var cpu = CPU{};
-    // Step-by-step to avoid raw32 lookahead bug
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x0000));
-    _ = try cpu.step();
-    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0001));
-    _ = try cpu.step();
-    writeInstruction32(&cpu.memory, 8, ISA.encode32(.MOV, .CX, 0x0002));
-    _ = try cpu.step();
-    // SUB AX, BX: 0x0000 - 0x0001 = 0xFFFF, sets Carry=1 (borrow)
-    writeInstruction(&cpu.memory, 12, ISA.encodeAlu(.SUB, .AX, .BX));
-    _ = try cpu.step();
-    // SBB AX, CX: 0xFFFF - 0x0002 - 1 = 0xFFFC
-    writeInstruction(&cpu.memory, 14, ISA.encodeAlu(.SBB, .AX, .CX));
-    _ = try cpu.step();
-    writeInstruction(&cpu.memory, 16, 0x7000);
-    _ = try cpu.step();
-
-    try std.testing.expect(cpu.halted);
-    try std.testing.expectEqual(@as(u16, 0xFFFC), cpu.ax);
 }
 
 test "CMP: equal sets zero, clears carry and sign" {
@@ -1347,7 +1267,7 @@ test "JZ: multiple flags set — only Z matters" {
     var cpu = CPU{};
     // Use SUB equal values to get Z=1, then OR with S via ADD to set S
     // Actually simpler: SUB 0x8000 - 0x8000 = 0 → Z=1, S=0 (result is 0)
-    // We need Z=1, C=1, S=1 simultaneously. Use ADC trick:
+    // We need Z=1, C=1, S=1 simultaneously. Use carry+sign trick:
     // 1) SUB 0 - 1 → C=1, S=1 (result 0xFFFF)
     // 2) ADD 0x8000 + 0x8000 → S=1 (but clears C)
     // Better: just set up so SUB equal values give Z=1, then check JZ
@@ -2325,27 +2245,6 @@ test "DEC 0x0000 step" {
     try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
     try std.testing.expect(!cpu.getCarry());
     try std.testing.expect(cpu.getSign());
-}
-
-test "ADC without carry" {
-    var cpu = CPU{};
-    cpu.ax = 0x0005;
-    cpu.bx = 0x0003;
-    cpu.flags &= ~CPU.CARRY_FLAG;
-    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADC, .AX, .BX));
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x0008), cpu.ax);
-    try std.testing.expect(!cpu.getCarry());
-}
-
-test "SBB without borrow" {
-    var cpu = CPU{};
-    cpu.ax = 0x000A;
-    cpu.bx = 0x0003;
-    cpu.flags &= ~CPU.CARRY_FLAG;
-    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SBB, .AX, .BX));
-    try cpu.step();
-    try std.testing.expectEqual(@as(u16, 0x0007), cpu.ax);
 }
 
 test "NEG 0 — zero and no carry" {

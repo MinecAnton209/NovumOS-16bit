@@ -2,6 +2,12 @@
 
 **NovumOS-16bit — from power-on to a running operating system**
 
+> **Status: Planned / Aspirational — not yet implemented in the emulator.**
+>
+> In the current emulator, the firmware binary (`.bin`) is loaded directly at address `0x0000` and execution starts immediately. There is no bootloader, no ROM→RAM copy, and no multi-stage initialization. The CPU's reset vector is hardwired to `0x0000` and the emulator begins fetching instructions from that address as soon as `run()` or `step()` is called.
+>
+> This document describes the *intended* boot flow for a future hardware implementation where a separate bootloader in ROM initializes the system and loads the kernel into RAM.
+
 [Back to README](../README.md)
 
 ---
@@ -12,9 +18,9 @@ The NovumOS-16bit boot process is the sequence of events that takes the custom T
 
 ---
 
-## High-Level Boot Sequence
+## High-Level Boot Sequence (Planned)
 
-The following sequence diagram shows the entire flow from power-on to the OS main loop:
+The following sequence diagram shows the intended flow from power-on to the OS main loop:
 
 ```mermaid
 sequenceDiagram
@@ -53,7 +59,20 @@ sequenceDiagram
 
 ---
 
-## Step-by-Step Boot Sequence
+## Current Emulator Behavior
+
+In the software emulator (`src/emulator/main.zig`):
+
+1. **Firmware loading**: The emulator reads a raw binary file (default `build/firmware.bin`) and copies its bytes directly into CPU memory starting at address `0x0000`.
+2. **No bootloader**: The binary is already the final program or kernel. There is no separate ROM stage.
+3. **Immediate execution**: The CPU begins executing at IP = `0x0000` with no initialization preamble. The reset values are AX = BX = CX = DX = 0, SP = `0xFFFE`, FLAGS = 0.
+4. **Interactive mode**: The `-i` flag runs the emulator as a simple terminal PC, routing keyboard input through the line buffer (ports `0x03`/`0x04`) and VGA output via port `0x10`.
+
+Because there is no bootloader, the firmware itself must set up the stack pointer and any other hardware state before calling subroutines or handling interrupts.
+
+---
+
+## Step-by-Step Boot Sequence (Planned)
 
 ### Step 1: Power-On and Clock Stabilization
 

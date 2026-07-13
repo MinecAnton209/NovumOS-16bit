@@ -7,14 +7,19 @@ Complete reference for binary instruction formats, opcode maps, and encoding rul
 ## Table of Contents
 
 1. [Encoding Overview](#encoding-overview)
-2. [16-bit Instruction Format](#16-bit-instruction-format)
-3. [32-bit Instruction Format](#32-bit-instruction-format)
-4. [Opcode Map](#opcode-map)
-5. [Operand Encoding](#operand-encoding)
-6. [Addressing Modes](#addressing-modes)
-7. [NOP Encoding](#nop-encoding)
-8. [Encoding Examples](#encoding-examples)
-9. [Illegal and Reserved Encodings](#illegal-and-reserved-encodings)
+2. [16/32-bit Instruction Detection](#1632-bit-instruction-detection)
+3. [16-bit Instruction Format](#16-bit-instruction-format)
+4. [32-bit Instruction Format](#32-bit-instruction-format)
+5. [Opcode Map](#opcode-map)
+6. [ALU Encoding](#alu-encoding)
+7. [CondJump Encoding](#condjump-encoding)
+8. [PushPop Encoding](#pushpop-encoding)
+9. [Operand Encoding](#operand-encoding)
+10. [Addressing Modes](#addressing-modes)
+11. [NOP Encoding](#nop-encoding)
+12. [I/O Port Map](#io-port-map)
+13. [Encoding Examples](#encoding-examples)
+14. [Illegal and Reserved Encodings](#illegal-and-reserved-encodings)
 
 ---
 
@@ -24,25 +29,54 @@ The NovumOS-16bit uses a hybrid instruction encoding scheme with two formats:
 
 ```mermaid
 flowchart LR
-    F[Instruction Fetch] --> D{Mode bit analysis}
-    D -- "bit 10 = 0" --> S16[16-bit Format]
-    D -- "bit 10 = 1" --> S32[32-bit Format]
-    S16 --> R[Register-Register]
-    S32 --> I[Register-Immediate / Extended]
+    F[Instruction Fetch] --> D{Check hi_mode<br/>bits 25:24}
+    D -- "hi_mode = 0b01" --> S32[32-bit Format<br/>opcode from bits 31:28<br/>immediate in bits 23:8]
+    D -- "hi_mode ≠ 0b01" --> S16_CT{lo_opcode?}
+    S16_CT -- "0xA" --> ALU_16[Always 16-bit ALU]
+    S16_CT -- "0xC" --> PP_CT{hi_opcode in<br/>32-bit set?}
+    S16_CT -- "other" --> S16_OK[16-bit Format<br/>opcode from bits 15:12]
+    PP_CT -- "yes" --> S32_PP[32-bit instruction<br/>(false positive)]
+    PP_CT -- "no" --> S16_PP[16-bit PushPop]
 ```
 
-The CPU determines the instruction format by examining the **mode bits** (bits 9–8) of the first word:
+The CPU determines the instruction format primarily by examining the **hi_mode** bits (bits 25:24) of the raw 32-bit fetched value:
 
-- If mode bits indicate register-register operation: **16-bit format**, single word
-- If mode bits indicate immediate or extended operation: **32-bit format**, two words
+- If **hi_mode == 0b01**: **32-bit format** — opcode from bits 31:28, immediate from bits 23:8
+- If **hi_mode ≠ 0b01**: **16-bit format** — opcode from bits 15:12
+
+**Exception: ALU opcode (0xA):** The ALU instruction at bits 15:12 is **always** 16-bit regardless of hi_mode. This is because a 32-bit instruction's immediate field can coincidentally have 0xA in bits 15:12.
+
+**Exception: PushPop opcode (0xC):** PushPop at bits 15:12 can be a false positive when followed by certain 32-bit instructions. The CPU cross-checks hi_opcode (bits 31:28): if it matches a known 32-bit opcode (1, 2, 3, 5, 8, 9, 0xB), follow hi_mode; otherwise the instruction is 16-bit PushPop.
 
 All instructions are fetched on 16-bit word boundaries. The IP always points to the next word to fetch.
 
 ---
 
+## 16/32-bit Instruction Detection
+
+The CPU always speculatively fetches 32 bits (two consecutive 16-bit words) from memory at IP:
+
+```
+lo16   = Memory[IP]   | (Memory[IP+1]  << 8)
+hi16   = Memory[IP+2] | (Memory[IP+3]  << 8)
+raw32  = lo16 | (hi16 << 16)
+```
+
+The decoder then applies these rules in priority order:
+
+| Condition | Size | Opcode source | Notes |
+|-----------|------|---------------|-------|
+| lo_opcode == 0xA | 16-bit | bits 15:12 | ALU exception — always 16-bit |
+| lo_opcode == 0xC AND hi_opcode in {1,2,3,5,8,9,0xB} | follow hi_mode | bits 31:28 | PushPop false positive — check hi_mode |
+| lo_opcode == 0xC AND hi_opcode not in 32-bit set | 16-bit | bits 15:12 | True PushPop |
+| hi_mode (bits 25:24) == 0b01 | 32-bit | bits 31:28 | Standard 32-bit detection |
+| Otherwise | 16-bit | bits 15:12 | Standard 16-bit |
+
+---
+
 ## 16-bit Instruction Format
 
-The 16-bit format is used for register-to-register operations.
+Used for register-to-register operations, ALU, PushPop, RET, NOP, HLT.
 
 ### Bit Field Layout
 
@@ -75,7 +109,7 @@ block-beta
 
 | Field   | Bits    | Width | Description                                     |
 |---------|---------|-------|-------------------------------------------------|
-| Opcode  | 15–12   | 4     | Instruction type (0000–1111)                     |
+| Opcode  | 15–12   | 4     | Instruction type (0x0–0xC)                      |
 | Dst     | 11–10   | 2     | Destination register encoding (00–11)            |
 | Src     | 9–8     | 2     | Source register encoding (00–11)                 |
 | Mode    | 7–6     | 2     | Operation mode (see addressing modes)            |
@@ -90,76 +124,73 @@ A 16-bit instruction is written as four hexadecimal digits: `0xODSMUU` where:
 - `M` = mode (1 hex digit, 0–3)
 - `UU` = unused bits, always 0
 
-Example: `MOV AX, BX` encodes as `0x0120` (opcode=0, dst=00, src=01, mode=00, unused=0)
+Example: `MOV AX, BX` encodes as `0x1100` (opcode=1, dst=00, src=01, mode=00, unused=00)
 
 ---
 
 ## 32-bit Instruction Format
 
-The 32-bit format is used for register-immediate operations, where the second word contains a 16-bit immediate value or extended operand.
+Used for register-immediate operations, jumps, calls, I/O, and conditional jumps. The mode field is **always** set to `0b01` (Imm) which is the marker the CPU uses to detect a 32-bit instruction.
 
-### Bit Field Layout — First Word
+### Bit Field Layout — Single 32-bit Value
 
 ```mermaid
 block-beta
     columns 16
     block:opcode:4
         columns 4
-        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
+        O3["bit 31"] O2["bit 30"] O1["bit 29"] O0["bit 28"]
     end
     block:dst:2
         columns 2
-        D1["bit 11"] D0["bit 10"]
+        D1["bit 27"] D0["bit 26"]
     end
     block:mode:2
         columns 2
-        M1["bit 9"] M0["bit 8"]
+        M1["bit 25"] M0["bit 24"]
     end
-    block:unused1:8
-        columns 8
-        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"] X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
-    end
-```
-
-### Bit Field Layout — Second Word (Immediate)
-
-```mermaid
-block-beta
-    columns 16
-    block:imm16:16
+    block:imm:16
         columns 16
-        I15["bit 15"] I14["bit 14"] I13["bit 13"] I12["bit 12"] I11["bit 11"] I10["bit 10"] I9["bit 9"] I8["bit 8"]
-        I7["bit 7"] I6["bit 6"] I5["bit 5"] I4["bit 4"] I3["bit 3"] I2["bit 2"] I1["bit 1"] I0["bit 0"]
+        I15["bit 23"] I14["bit 22"] I13["bit 21"] I12["bit 20"]
+        I11["bit 19"] I10["bit 18"] I9["bit 17"] I8["bit 16"]
+        I7["bit 15"] I6["bit 14"] I5["bit 13"] I4["bit 12"]
+        I3["bit 11"] I2["bit 10"] I1["bit 9"] I0["bit 8"]
+    end
+    block:unused:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"]
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
     end
 ```
 
-### Field Descriptions — First Word
+### Field Descriptions
 
-| Field   | Bits    | Width | Description                                         |
-|---------|---------|-------|-----------------------------------------------------|
-| Opcode  | 15–12   | 4     | Instruction type (0000–1111)                         |
-| Dst     | 11–10   | 2     | Destination register encoding (00–11)                |
-| Mode    | 9–8     | 2     | Operation mode — selects immediate encoding          |
-| Unused1 | 7–0     | 8     | Reserved, must be zero. Reads as 0.                  |
+| Field     | Bits    | Width | Description                                         |
+|-----------|---------|-------|-----------------------------------------------------|
+| Opcode    | 31–28   | 4     | Instruction type (0x0–0xC)                          |
+| Dst       | 27–26   | 2     | Destination register encoding (00–11)                |
+| Mode      | 25–24   | 2     | MUST be `0b01` (Imm) — this marks 32-bit format      |
+| Immediate | 23–8    | 16    | 16-bit immediate value or address operand            |
+| Unused    | 7–0     | 8     | Reserved, must be zero. Reads as 0.                  |
 
-### Field Descriptions — Second Word
-
-| Field   | Bits    | Width | Description                                         |
-|---------|---------|-------|-----------------------------------------------------|
-| Imm16   | 15–0    | 16    | 16-bit immediate value or address operand            |
+**Critical:** The mode field (bits 25:24) is hardcoded to `0b01` (AddrMode.Imm) for all 32-bit instructions generated by encode32(). The CPU uses this to distinguish 32-bit from 16-bit instructions during decode.
 
 ### Hex Notation
 
-A 32-bit instruction occupies two consecutive words:
+A 32-bit instruction is written as eight hexadecimal digits: `0xODMIIIIU` where:
+- `O` = opcode nibble (1 hex digit)
+- `D` = destination register (1 hex digit, 0–3)
+- `M` = mode (always 1 for Imm encoding)
+- `IIII` = 16-bit immediate value (4 hex digits)
+- `U` = unused nibble, always 0
 
-```
-Word 1: 0xOMXX (opcode + dst + mode + 8 unused bits)
-Word 2: 0xIIII (16-bit immediate value)
-```
+The 32-bit value is stored in memory as two consecutive 16-bit words in little-endian byte order:
+- Word at IP: low 16 bits of the 32-bit value
+- Word at IP+2: high 16 bits of the 32-bit value
 
-Example: `MOV AX, #0x1234` encodes as two words: `0x0080` then `0x1234`
-- Word 1: opcode=0 (MOV), dst=00 (AX), mode=01 (immediate), unused=0x00
-- Word 2: 0x1234 (the immediate value)
+Example: `MOV AX, #0x1234` encodes as the single 32-bit value `0x11123400`
+- Bits 31:28 = 1 (MOV), bits 27:26 = 0 (AX), bits 25:24 = 01 (Imm), bits 23:8 = 0x1234, bits 7:0 = 0
+- In memory (little-endian): `0x3400` at IP, `0x1112` at IP+2
 
 ---
 
@@ -167,24 +198,21 @@ Example: `MOV AX, #0x1234` encodes as two words: `0x0080` then `0x1234`
 
 ### Complete Opcode Table
 
-| Opcode (binary) | Opcode (hex) | Mnemonic | Category          | Description              |
-|------------------|--------------|----------|-------------------|--------------------------|
-| `0000`           | `0x0`        | MOV      | Data Transfer     | Move / Load              |
-| `0001`           | `0x1`        | ADD      | Arithmetic        | Integer addition         |
-| `0010`           | `0x2`        | SUB      | Arithmetic        | Integer subtraction      |
-| `0011`           | `0x3`        | AND      | Logic             | Bitwise AND              |
-| `0100`           | `0x4`        | OR       | Logic             | Bitwise OR               |
-| `0101`           | `0x5`        | XOR      | Logic             | Bitwise exclusive OR     |
-| `0110`           | `0x6`        | SHL      | Shift             | Shift left logical       |
-| `0111`           | `0x7`        | SHR      | Shift             | Shift right logical      |
-| `1000`           | `0x8`        | JMP      | Control Flow      | Unconditional jump       |
-| `1001`           | `0x9`        | JZ       | Control Flow      | Jump if zero             |
-| `1010`           | `0xA`        | JNZ      | Control Flow      | Jump if not zero         |
-| `1011`           | `0xB`        | IN       | I/O               | Input from port          |
-| `1100`           | `0xC`        | OUT      | I/O               | Output to port           |
-| `1101`           | `0xD`        | CALL/INT | Control Flow/System | Call subroutine / Interrupt |
-| `1110`           | `0xE`        | RET/POP  | Control Flow/Stack | Return / Pop             |
-| `1111`           | `0xF`        | HLT      | System            | Halt CPU                 |
+| Binary  | Hex | Mnemonic    | Category      | Description                     |
+|---------|-----|-------------|---------------|---------------------------------|
+| `0000`  | 0x0 | NOP         | System        | No operation                    |
+| `0001`  | 0x1 | MOV         | Data Transfer | Move / Load                    |
+| `0010`  | 0x2 | JMP         | Control Flow  | Unconditional jump             |
+| `0011`  | 0x3 | CALL        | Control Flow  | Call subroutine                |
+| `0100`  | 0x4 | RET         | Control Flow  | Return from subroutine         |
+| `0101`  | 0x5 | INT         | System        | Software interrupt             |
+| `0110`  | 0x6 | IRET        | System        | Return from interrupt          |
+| `0111`  | 0x7 | HLT         | System        | Halt CPU                       |
+| `1000`  | 0x8 | IN          | I/O           | Input from port                |
+| `1001`  | 0x9 | OUT         | I/O           | Output to port                 |
+| `1010`  | 0xA | ALU         | Arithmetic    | ALU operation (see sub-opcodes)|
+| `1011`  | 0xB | CondJump    | Control Flow  | Conditional jump               |
+| `1100`  | 0xC | PushPop     | Stack         | Push or pop register           |
 
 ### Opcode Map Visualization
 
@@ -192,28 +220,215 @@ Example: `MOV AX, #0x1234` encodes as two words: `0x0080` then `0x1234`
 flowchart TD
     subgraph "Opcode Map (4-bit)"
         direction LR
-        subgraph "0xxx - Data/ALU"
-            OP0["0000 MOV"] --- OP1["0001 ADD"]
-            OP1 --- OP2["0010 SUB"]
-            OP2 --- OP3["0011 AND"]
-            OP3 --- OP4["0100 OR"]
-            OP4 --- OP5["0101 XOR"]
-            OP5 --- OP6["0110 SHL"]
-            OP6 --- OP7["0111 SHR"]
-        end
-        subgraph "1xxx - Control/System"
-            OP8["1000 JMP"] --- OP9["1001 JZ"]
-            OP9 --- OPA["1010 JNZ"]
-            OPA --- OPB["1011 IN"]
-            OPB --- OPC["1100 OUT"]
-            OPC --- OPD["1101 CALL/INT"]
-            OPD --- OPE["1110 RET/POP"]
-            OPE --- OPF["1111 HLT"]
-        end
+        OP0["0000 NOP"] --- OP1["0001 MOV"]
+        OP1 --- OP2["0010 JMP"]
+        OP2 --- OP3["0011 CALL"]
+        OP3 --- OP4["0100 RET"]
+        OP4 --- OP5["0101 INT"]
+        OP5 --- OP6["0110 IRET"]
+        OP6 --- OP7["0111 HLT"]
+        OP7 --- OP8["1000 IN"]
+        OP8 --- OP9["1001 OUT"]
+        OP9 --- OPA["1010 ALU"]
+        OPA --- OPB["1011 CondJump"]
+        OPB --- OPC["1100 PushPop"]
     end
 ```
 
-### Register Encoding
+### Mode Encoding — 16-bit Format
+
+| Mode (bits 7–6) | Value | Meaning |
+|------------------|-------|---------|
+| `00`             | 0     | Register-register operation |
+| `01`             | 1     | Immediate value (next word) |
+| `10`             | 2     | Register-indirect (address in src register) |
+| `11`             | 3     | Register-indirect with offset (next word) |
+
+### Mode Encoding — 32-bit Format
+
+| Mode (bits 25–24) | Value | Meaning |
+|--------------------|-------|---------|
+| `01`               | 1     | Immediate — MUST be 01 for standard 32-bit encoding |
+
+---
+
+## ALU Encoding
+
+ALU instructions use opcode `0xA` and are distinguished by a 4-bit `AluOp` sub-opcode field. The ALU is the only opcode that can appear in both 16-bit (register-register) and 32-bit (register-immediate) forms.
+
+### 16-bit ALU Format
+
+Bits 15:12 = ALU (0xA), bits 11:8 = alu_op, bits 7:6 = dst, bits 5:4 = src, bits 3:0 = unused
+
+```mermaid
+block-beta
+    columns 16
+    block:op:4
+        columns 4
+        A3["bit 15<br/>1"] A2["bit 14<br/>0"] A1["bit 13<br/>1"] A0["bit 12<br/>0"]
+    end
+    block:alu:4
+        columns 4
+        U3["bit 11"] U2["bit 10"] U1["bit 9"] U0["bit 8"]
+    end
+    block:rd:2
+        columns 2
+        R1["bit 7"] R0["bit 6"]
+    end
+    block:rs:2
+        columns 2
+        S1["bit 5"] S0["bit 4"]
+    end
+    block:unused:4
+        columns 4
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
+```
+
+### 32-bit ALU Format
+
+Bits 31:28 = ALU (0xA), bits 27:24 = alu_op, bits 23:22 = dst, bits 21:6 = immediate, bits 5:0 = unused
+
+```mermaid
+block-beta
+    columns 16
+    block:op:4
+        columns 4
+        A3["bit 31<br/>1"] A2["bit 30<br/>0"] A1["bit 29<br/>1"] A0["bit 28<br/>0"]
+    end
+    block:alu:4
+        columns 4
+        U3["bit 27"] U2["bit 26"] U1["bit 25"] U0["bit 24"]
+    end
+    block:rd:2
+        columns 2
+        R1["bit 23"] R0["bit 22"]
+    end
+    block:imm:16
+        columns 16
+        I15["bit 21"] I14["bit 20"] I13["bit 19"] I12["bit 18"]
+        I11["bit 17"] I10["bit 16"] I9["bit 15"] I8["bit 14"]
+        I7["bit 13"] I6["bit 12"] I5["bit 11"] I4["bit 10"]
+        I3["bit 9"] I2["bit 8"] I1["bit 7"] I0["bit 6"]
+    end
+    block:unused:6
+        columns 6
+        X5["bit 5"] X4["bit 4"] X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
+```
+
+### AluOp Table
+
+| Binary  | Hex | Mnemonic | Description                          | Flags         |
+|---------|-----|----------|--------------------------------------|---------------|
+| `0000`  | 0x0 | ADD      | dst = dst + src                      | Z, C, S       |
+| `0001`  | 0x1 | SUB      | dst = dst - src                      | Z, C, S       |
+| `0010`  | 0x2 | CMP      | Compare (subtract, flags only)       | Z, C, S       |
+| `0011`  | 0x3 | TEST     | Bitwise AND test (flags only)        | Z, S          |
+| `0100`  | 0x4 | AND      | Bitwise AND                          | Z, S          |
+| `0101`  | 0x5 | OR       | Bitwise OR                           | Z, S          |
+| `0110`  | 0x6 | XOR      | Bitwise exclusive OR                 | Z, S          |
+| `0111`  | 0x7 | SHL      | Shift left logical                   | Z, C, S       |
+| `1000`  | 0x8 | SHR      | Shift right logical                  | Z, C, S       |
+| `1001`  | 0x9 | INC      | Increment: dst = dst + 1             | Z, S          |
+| `1010`  | 0xA | DEC      | Decrement: dst = dst - 1             | Z, S          |
+| `1011`  | 0xB | NOT      | Bitwise complement                   | None          |
+| `1100`  | 0xC | NEG      | Two's complement negate: dst = 0 - dst | Z, C, S     |
+| `1101`  | 0xD | MUL      | Multiply (planned)                   | TBD           |
+| `1110`  | 0xE | DIV      | Divide (planned)                     | TBD           |
+| `1111`  | 0xF | reserved | —                                    | —             |
+
+---
+
+## CondJump Encoding
+
+Conditional jumps use opcode `0xB` and are always **32-bit** format.
+
+Bits 31:28 = CondJump (0xB), bits 27:24 = mode (0b01), bits 23:20 = cond, bits 19:4 = target (16-bit address), bits 3:0 = unused
+
+```mermaid
+block-beta
+    columns 16
+    block:op:4
+        columns 4
+        A3["bit 31<br/>1"] A2["bit 30<br/>0"] A1["bit 29<br/>1"] A0["bit 28<br/>1"]
+    end
+    block:mode:4
+        columns 4
+        M3["bit 27<br/>0"] M2["bit 26<br/>0"] M1["bit 25<br/>0"] M0["bit 24<br/>1"]
+    end
+    block:cond:4
+        columns 4
+        C3["bit 23"] C2["bit 22"] C1["bit 21"] C0["bit 20"]
+    end
+    block:target:16
+        columns 16
+        T15["bit 19"] T14["bit 18"] T13["bit 17"] T12["bit 16"]
+        T11["bit 15"] T10["bit 14"] T9["bit 13"] T8["bit 12"]
+        T7["bit 11"] T6["bit 10"] T5["bit 9"] T4["bit 8"]
+        T3["bit 7"] T2["bit 6"] T1["bit 5"] T0["bit 4"]
+    end
+    block:unused:4
+        columns 4
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
+```
+
+### Condition Codes
+
+| Binary  | Hex | Mnemonic | Condition    | Flag Test     |
+|---------|-----|----------|--------------|---------------|
+| `0000`  | 0x0 | JZ       | Zero         | Z == 1        |
+| `0001`  | 0x1 | JNZ      | Not zero     | Z == 0        |
+| `0010`  | 0x2 | JC       | Carry        | C == 1        |
+| `0011`  | 0x3 | JNC      | No carry     | C == 0        |
+| `0100`  | 0x4 | JS       | Sign (negative) | S == 1     |
+| `0101`  | 0x5 | JNS      | No sign (non-negative) | S == 0 |
+
+---
+
+## PushPop Encoding
+
+Stack operations use opcode `0xC` and are always **16-bit** format.
+
+Bits 15:12 = PushPop (0xC), bits 11:10 = reg, bits 9:8 = stack_op, bits 7:0 = unused
+
+```mermaid
+block-beta
+    columns 16
+    block:op:4
+        columns 4
+        A3["bit 15<br/>1"] A2["bit 14<br/>1"] A1["bit 13<br/>0"] A0["bit 12<br/>0"]
+    end
+    block:reg:2
+        columns 2
+        D1["bit 11"] D0["bit 10"]
+    end
+    block:stk:2
+        columns 2
+        M1["bit 9"] M0["bit 8"]
+    end
+    block:unused:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"]
+        X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
+```
+
+### Stack Operation Modes
+
+| Bits 9–8 | Value | Mnemonic | Operation |
+|----------|-------|----------|-----------|
+| `00`     | 0     | PUSH     | SP ← SP − 2; Memory[SP] ← reg |
+| `01`     | 1     | POP      | reg ← Memory[SP]; SP ← SP + 2 |
+
+---
+
+## Operand Encoding
+
+### Register Operands
+
+Registers are encoded as 2-bit fields within the instruction.
 
 | Encoding | Register | Alias |
 |----------|----------|-------|
@@ -222,121 +437,30 @@ flowchart TD
 | `10`     | CX       | Counter |
 | `11`     | DX       | Data |
 
-### Mode Encoding — 16-bit Format
-
-| Mode (bits 9–8) | Value | Meaning |
-|------------------|-------|---------|
-| `00`             | 0     | Register-register operation |
-| `01`             | 1     | Register-indirect (address in src register) |
-| `10`             | 2     | Reserved (future use) |
-| `11`             | 3     | Reserved (future use) |
-
-### Mode Encoding — 32-bit Format
-
-| Mode (bits 9–8) | Value | Meaning |
-|------------------|-------|---------|
-| `00`             | 0     | Register-immediate operation (lower 8 bits of instruction unused) |
-| `01`             | 1     | Register-immediate with 16-bit immediate in second word |
-| `10`             | 2     | Extended addressing (memory indirect) |
-| `11`             | 3     | Reserved (future use) |
-
----
-
-## Operand Encoding
-
-### Register Operands
-
-Registers are encoded as 2-bit fields within the instruction. The encoding applies to both source and destination fields.
-
-```mermaid
-block-beta
-    columns 2
-    block:reg0["00 = AX"]
-        columns 1
-        A1["Accumulator"]
-    end
-    block:reg1["01 = BX"]
-        columns 1
-        B1["Base"]
-    end
-    block:reg2["10 = CX"]
-        columns 1
-        C1["Counter"]
-    end
-    block:reg3["11 = DX"]
-        columns 1
-        D1["Data"]
-    end
-```
-
 Register operands can appear in:
 
-- **Dst field** (bits 11–10 in 16-bit, bits 11–10 in 32-bit): Target of the operation
+- **Dst field** (bits 11–10 in 16-bit, bits 27–26 in 32-bit): Target of the operation
 - **Src field** (bits 9–8 in 16-bit): Source of the operation (register-register mode only)
+- **Reg field** (bits 11–10 in PushPop): Register to push or pop
+- **Dst/Src fields** (bits 7–6 and 5–4 in 16-bit ALU): ALU destination and source
 
 ### Immediate Operands
 
-Immediate values are encoded in the second word of 32-bit instructions. The immediate is a full 16-bit unsigned value (0x0000–0xFFFF).
+In the 32-bit format, immediate values occupy bits 23:8 of the instruction. The immediate is a full 16-bit unsigned value (0x0000–0xFFFF).
 
 **Immediate representation:**
 
-- Stored in two's complement form for signed interpretation
+- Stored as a raw 16-bit value in bits 23:8
 - Range: 0 to 65535 (unsigned) or −32768 to +32767 (signed)
 - The CPU treats the immediate as a raw bit pattern; signedness depends on the instruction
-
-**Immediate instruction flow:**
-
-```mermaid
-sequenceDiagram
-    participant IP as IP Register
-    participant IF as Instruction Fetch
-    participant IR as Instruction Register
-
-    IP->>IF: Fetch word at IP
-    IF->>IR: First word (opcode + dst + mode)
-    Note over IP: IP ← IP + 2
-    IP->>IF: Fetch word at IP
-    IF->>IR: Second word (immediate value)
-    Note over IP: IP ← IP + 2
-    Note over IR: Execute with immediate
-```
-
-### Memory Indirect Operands
-
-Memory indirect operands use a register as a pointer to a memory location. The effective address is the value held in the specified register.
-
-**Encoding in 16-bit format:**
-
-| Mode | Src field | Effective address |
-|------|-----------|-------------------|
-| `01` | Register  | Value in register (0–65535) used as memory address |
-
-**Encoding in 32-bit format (mode `10`):**
-
-| Mode | Second word | Effective address |
-|------|-------------|-------------------|
-| `10` | Immediate   | 16-bit address used directly as memory address |
-
-**Memory access flow:**
-
-```mermaid
-flowchart TD
-    A[Fetch instruction] --> B{Mode bits?}
-    B -- "00: reg-reg" --> C[Use register values directly]
-    B -- "01: reg-indirect" --> D[Read address from src register]
-    B -- "10: memory" --> E[Read address from immediate word]
-    D --> F[Memory access at effective address]
-    E --> F
-    F --> G[Complete operation]
-```
 
 ---
 
 ## Addressing Modes
 
-The NovumOS-16bit supports three addressing modes, selected by the mode field:
+The NovumOS-16bit supports four addressing modes, selected by the mode field.
 
-### Mode 0: Register-Register
+### Mode 0: Register-Register (RegReg)
 
 All operands are in registers. No memory access occurs (except instruction fetch).
 
@@ -352,93 +476,79 @@ All operands are in registers. No memory access occurs (except instruction fetch
 
 | Instruction | Opcode | Dst | Src | Mode | Hex |
 |-------------|--------|-----|-----|------|-----|
-| MOV AX, BX  | 0000   | 00  | 01  | 00   | 0x0120 |
-| ADD CX, DX  | 0001   | 10  | 11  | 00   | 0x13A0 |
-| XOR AX, AX  | 0101   | 00  | 00  | 00   | 0x5020 |
-| AND BX, CX  | 0011   | 01  | 10  | 00   | 0x3260 |
+| MOV AX, BX  | 0001   | 00  | 01  | 00   | 0x1100 |
+| MOV CX, DX  | 0001   | 10  | 11  | 00   | 0x13A0 |
+| MOV AX, AX  | 0001   | 00  | 00  | 00   | 0x1000 |
 
-### Mode 1: Register-Indirect (16-bit format)
+### Mode 1: Immediate (16-bit format)
+
+The immediate value is read from the next instruction word.
+
+**Instruction format:** 16-bit with inline immediate word
+
+```
+Word 1: [opcode:4][dst:2][src:2][01:2][unused:6]
+Word 2: [immediate:16]
+```
+
+**Operation:** `R[dst] ← R[dst] op imm16`
+
+**Example:**
+
+| Instruction | Opcode | Dst | Mode | Immediate | Hex words |
+|-------------|--------|-----|------|-----------|-----------|
+| MOV AX, #0x1234 | 0001 | 00 | 01 | 0x1234 | 0x1040, 0x1234 |
+
+### Mode 2: Indirect
 
 The source operand is a memory location pointed to by the source register.
 
 **Instruction format:** 16-bit
 
 ```
-[opcode:4][dst:2][src:2][01:2][unused:6]
+[opcode:4][dst:2][src:2][10:2][unused:6]
 ```
 
-**Operation:** `R[dst] ← R[dst] op Memory[R[src]]`
+**Operation:** `R[dst] ← Memory[R[src]]`
 
 **Examples:**
 
 | Instruction | Opcode | Dst | Src | Mode | Hex |
 |-------------|--------|-----|-----|------|-----|
-| MOV AX, [BX] | 0000  | 00  | 01  | 01   | 0x0124 |
-| ADD CX, [DX] | 0001  | 10  | 11  | 01   | 0x13A4 |
+| MOV AX, [BX] | 0001 | 00 | 01 | 10 | 0x1180 |
 
-### Mode 0: Register-Immediate (32-bit format)
+### Mode 3: Indirect with Offset (IndirectOff)
 
-The source operand is an immediate value in the second instruction word.
+The source operand is a memory location pointed to by the source register plus an offset from the next instruction word.
 
-**Instruction format:** 32-bit
-
-```
-Word 1: [opcode:4][dst:2][00:2][unused:8]
-Word 2: [immediate:16]
-```
-
-**Operation:** `R[dst] ← R[dst] op imm16`
-
-**Examples:**
-
-| Instruction | Opcode | Dst | Mode | Immediate | Hex words |
-|-------------|--------|-----|------|-----------|-----------|
-| MOV AX, #0x1234 | 0000 | 00 | 00 | 0x1234 | 0x0080, 0x1234 |
-| ADD BX, #10 | 0001 | 01 | 00 | 0x000A | 0x1080, 0x000A |
-| SUB CX, #1 | 0010 | 10 | 00 | 0x0001 | 0x2080, 0x0001 |
-
-### Mode 1: Register-Immediate with Address (32-bit format)
-
-Used for operations that need both a register and a full 16-bit address, such as memory loads in future extensions.
-
-**Instruction format:** 32-bit
+**Instruction format:** 16-bit with inline offset word
 
 ```
-Word 1: [opcode:4][dst:2][01:2][unused:8]
-Word 2: [address:16]
+Word 1: [opcode:4][dst:2][src:2][11:2][unused:6]
+Word 2: [offset:16]
 ```
 
-### Mode 2: Memory Indirect (32-bit format)
+**Operation:** `R[dst] ← Memory[R[src] + offset]`
 
-The second word contains the direct memory address to access.
+**Example:**
 
-**Instruction format:** 32-bit
-
-```
-Word 1: [opcode:4][dst:2][10:2][unused:8]
-Word 2: [address:16]
-```
-
-**Operation:** `R[dst] ← R[dst] op Memory[imm16]`
+| Instruction | Opcode | Dst | Src | Mode | Hex words |
+|-------------|--------|-----|-----|------|-----------|
+| MOV AX, [BX+4] | 0001 | 00 | 01 | 11 | 0x11C0, 0x0004 |
 
 ---
 
 ## NOP Encoding
 
-**NOP (No Operation)** is encoded as `0x0000`.
-
-This encoding corresponds to `MOV AX, AX` — moving AX into itself. Since no state changes occur, this functions as a NOP.
+**NOP (No Operation)** is encoded as `0x0000`. This is a dedicated instruction at opcode 0x0.
 
 ### Why 0x0000 is NOP
 
 ```mermaid
 flowchart TD
-    A["0x0000 in binary: 0000 00 00 00 000000"] --> B["Decode: opcode=0000 (MOV)"]
-    B --> C["Decode: dst=00 (AX)"]
-    C --> D["Decode: src=00 (AX)"]
-    D --> E["Decode: mode=00 (register-register)"]
-    E --> F["Execute: AX ← AX"]
-    F --> G["Result: No change (NOP)"]
+    A["0x0000 in binary: 0000 00 00 00 000000"] --> B["Decode: opcode=0000 (NOP)"]
+    B --> C["Execute: no operation, advance IP by 2"]
+    C --> D["Result: No change"]
 ```
 
 ### NOP Properties
@@ -446,37 +556,42 @@ flowchart TD
 | Property | Value |
 |----------|-------|
 | Encoding | `0x0000` |
-| Equivalent instruction | `MOV AX, AX` |
+| Opcode   | 0x0 (NOP) |
 | Flags affected | None |
 | Cycles | 1 |
 | Side effects | None |
 
-### Alternative NOP
+The canonical NOP is `0x0000` — the all-zero encoding. Additional NOP-like instructions include any operation with no observable side effects, such as `MOV AX, AX` (0x1000).
 
-Any instruction that has no observable effect can serve as a NOP:
+---
 
-| Instruction | Encoding | Notes |
-|-------------|----------|-------|
-| `MOV AX, AX` | `0x0020` | Primary NOP encoding |
-| `MOV BX, BX` | `0x0160` | Alternative NOP |
-| `MOV CX, CX` | `0x02A0` | Alternative NOP |
-| `MOV DX, DX` | `0x03E0` | Alternative NOP |
-| `XOR AX, AX` | `0x5020` | Also clears AX to zero (not a true NOP) |
+## I/O Port Map
 
-The canonical NOP is `0x0000` (`MOV AX, AX`).
+The NovumOS-16bit uses a dedicated I/O address space with 256 ports (0x00–0xFF). Some ports are mapped to specific peripherals.
+
+| Port | Peripheral | Direction | Description |
+|------|------------|-----------|-------------|
+| 0x00 | UART       | R/W       | Terminal I/O (Read = receive, Write = transmit) |
+| 0x01 | Timer      | Read      | Cycle counter (low 16 bits of cycle_count) |
+| 0x02 | Keyboard   | Read      | Scan code ring buffer (0 if empty) |
+| 0x03 | Line cmd_id| Read      | Command ID, clears on read: 0=none, 1=help, 2=clear, 3=reboot, 4=info, 5=dump, 6=halt, 7=unknown |
+| 0x04 | Line buffer| Read      | Next byte from line buffer (0 if empty) |
+| 0x10 | VGA char   | Write     | Character output to VGA cursor position |
+| 0x11 | VGA control| Write     | Control: 0x0001=clear, 0x0002=flush |
+| 0x05–0xFF | Generic | R/W    | General purpose I/O ports |
 
 ---
 
 ## Encoding Examples
 
-### Example 1: Register-Register ADD
+### Example 1: Register-Register MOV
 
-**Instruction:** `ADD AX, BX`
+**Instruction:** `MOV AX, BX`
 
 **Binary breakdown:**
 
 ```
-Opcode: ADD = 0001
+Opcode: MOV = 0001
 Dst:    AX  = 00
 Src:    BX  = 01
 Mode:   reg-reg = 00
@@ -490,71 +605,117 @@ Hex:    0x1100
 
 **Instruction:** `MOV CX, #0xBEEF`
 
-**Word 1 breakdown:**
+**32-bit breakdown:**
 
 ```
-Opcode: MOV = 0000
+Opcode: MOV = 0001
 Dst:    CX  = 10
-Mode:   immediate = 00
-Unused: 00000000
+Mode:   Imm = 01 (bits 25:24)
+Imm:    0xBEEF (bits 23:8)
+Unused: 00 (bits 7:0)
 
-Binary word 1: 0000 10 00 00000000
-Hex word 1:    0x0280
+Binary: 0001 10 01 1011111011101111 00000000
+Hex:    0x19BEEF00
 ```
-
-**Word 2:** `0xBEEF`
 
 ### Example 3: Conditional Jump (JZ)
 
 **Instruction:** `JZ #0x0100`
 
-**Word 1 breakdown:**
+**32-bit breakdown:**
 
 ```
-Opcode: JZ  = 1001
-Dst:    (unused for jumps)
-Mode:   immediate = 01
-Unused: 00000000
+Opcode: CondJump = 1011
+Mode:   01 (bits 27:24, for 32-bit detection)
+Cond:   JZ = 0000
+Target: 0x0100 (bits 19:4)
+Unused: 0000
 
-Binary word 1: 1001 00 01 00000000
-Hex word 1:    0x9040
+Binary: 1011 0001 0000 0000000100000000 0000
+Hex:    0xB1001000
 ```
 
-**Word 2:** `0x0100` (target address)
+### Example 4: OUT to VGA Port
 
-### Example 4: OUT to Port
+**Instruction:** `OUT #0x10, AX`
 
-**Instruction:** `OUT #0x0010, AX`
-
-**Word 1 breakdown:**
+**32-bit breakdown:**
 
 ```
-Opcode: OUT = 1100
-Dst:    port = #0x0010 (in immediate)
-Mode:   immediate = 01
-Unused: 00000000
+Opcode: OUT = 1001
+Dst:    AX  = 00 (source register)
+Mode:   Imm = 01
+Imm:    0x0010 (port number)
+Unused: 00
 
-Binary word 1: 1100 00 01 00000000
-Hex word 1:    0xC040
+Binary: 1001 00 01 0000000000010000 00000000
+Hex:    0x91001000
 ```
 
-**Word 2:** `0x0010` (port number)
+### Example 5: ALU Addition
 
-### Example 5: PUSH register
+**Instruction:** `ADD AX, BX`
+
+**16-bit breakdown:**
+
+```
+Opcode: ALU = 1010
+AluOp:  ADD = 0000
+Dst:    AX  = 00
+Src:    BX  = 01
+Unused: 0000
+
+Binary: 1010 0000 00 01 0000
+Hex:    0xA010
+```
+
+### Example 6: ALU AND
+
+**Instruction:** `AND AX, BX`
+
+**16-bit breakdown:**
+
+```
+Opcode: ALU = 1010
+AluOp:  AND = 0100
+Dst:    AX  = 00
+Src:    BX  = 01
+Unused: 0000
+
+Binary: 1010 0100 00 01 0000
+Hex:    0xA410
+```
+
+### Example 7: PUSH Register
 
 **Instruction:** `PUSH AX`
 
-**Binary breakdown:**
+**16-bit breakdown:**
 
 ```
-Opcode: PUSH = 1101 (shared with CALL/INT)
-Dst:    (unused)
-Src:    AX  = 00
-Mode:   register = 00
-Unused: 000000
+Opcode: PushPop = 1100
+Reg:    AX = 00
+StkOp:  PUSH = 00
+Unused: 00000000
 
-Binary: 1101 00 00 00 000000
-Hex:    0xD000
+Binary: 1100 00 00 00000000
+Hex:    0xC000
+```
+
+### Example 8: POP Register
+
+**Instruction:** `POP BX`
+
+**16-bit breakdown:**
+
+```
+Opcode: PushPop = 1100
+Reg:    BX = 01
+StkOp:  POP = 01
+Unused: 00000000
+
+Binary: 1100 01 01 00000000
+Hex:    0xC500
 ```
 
 ---
@@ -563,18 +724,15 @@ Hex:    0xD000
 
 ### Undefined Opcode Behavior
 
-Opcodes in the range `1111` (`0xF`) through unused combinations are treated as HLT. The CPU halts on encountering an undefined opcode.
+Opcodes in the range `1101`–`1111` (0xD–0xF) are undefined. The CPU halts on encountering an undefined opcode.
 
 ### Reserved Mode Bits
 
-Mode values `10` and `11` in the 16-bit format are reserved. If encountered, the CPU behavior is:
-
-- **Mode `10`:** Treated as NOP (instruction ignored)
-- **Mode `11`:** Treated as NOP (instruction ignored)
+Mode values in the 16-bit format that do not correspond to implemented addressing modes are treated as NOP (instruction ignored).
 
 ### Unused Bits
 
-The unused bits in both instruction formats (bits 5–0 in 16-bit, bits 7–0 in first word of 32-bit) must be written as zero during normal operation. The CPU ignores these bits during decoding. However:
+The unused bits in both instruction formats must be written as zero during normal operation. The CPU ignores these bits during decoding. However:
 
 - The assembler must set unused bits to zero
 - The CPU may use these bits in future extensions
@@ -585,10 +743,10 @@ The unused bits in both instruction formats (bits 5–0 in 16-bit, bits 7–0 in
 | Rule | Description |
 |------|-------------|
 | Word alignment | All instructions start on 16-bit word boundaries |
-| Immediate alignment | 32-bit instructions occupy exactly two consecutive words |
+| 32-bit alignment | 32-bit instructions occupy exactly two consecutive words |
 | Unused zeros | All unused bits must be zero |
 | Stack bounds | PUSH/POP must not cause SP to go below 0x0000 or above 0xFFFF |
-| Jump targets | JMP/JZ/JNZ targets must be word-aligned (even addresses) |
+| Jump targets | Jump targets must be word-aligned (even addresses) |
 
 ---
 

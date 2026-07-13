@@ -49,23 +49,23 @@ pub const Opcode = enum(u4) {
 /// ALU sub-opcodes — encoded in bits 11:8 of 16-bit ALU instructions.
 /// All ALU operations work on two registers (dst and src).
 /// Result is stored in dst, except CMP and TEST which only set flags.
+/// 8086-compatible encoding: arithmetic first, then logic, then shifts.
 pub const AluOp = enum(u4) {
     ADD = 0b0000,    // dst = dst + src
     SUB = 0b0001,    // dst = dst - src
     CMP = 0b0010,    // Compare (subtract without storing result)
     TEST = 0b0011,   // Bitwise AND (result discarded, flags only)
-    ADC = 0b0100,    // dst = dst + src + Carry (add with carry)
-    SBB = 0b0101,    // dst = dst - src - Carry (subtract with borrow)
-    AND = 0b0110,    // dst = dst AND src
-    OR = 0b0111,     // dst = dst OR src
-    XOR = 0b1000,    // dst = dst XOR src
-    SHL = 0b1001,    // dst = dst << src (shift left)
-    SHR = 0b1010,    // dst = dst >> src (shift right)
-    INC = 0b1011,    // dst = dst + 1 (increment)
-    DEC = 0b1100,    // dst = dst - 1 (decrement)
-    NOT = 0b1101,    // dst = NOT dst (bitwise complement)
-    NEG = 0b1110,    // dst = 0 - dst (two's complement negate)
-    XCHG = 0b1111,   // Swap dst and src values
+    AND = 0b0100,    // dst = dst AND src
+    OR = 0b0101,     // dst = dst OR src
+    XOR = 0b0110,    // dst = dst XOR src
+    SHL = 0b0111,    // dst = dst << src (shift left)
+    SHR = 0b1000,    // dst = dst >> src (shift right)
+    INC = 0b1001,    // dst = dst + 1 (increment)
+    DEC = 0b1010,    // dst = dst - 1 (decrement)
+    NOT = 0b1011,    // dst = NOT dst (bitwise complement)
+    NEG = 0b1100,    // dst = 0 - dst (two's complement negate)
+    MUL = 0b1101,    // dst = dst * src (multiply signed) — planned
+    DIV = 0b1110,    // dst = dst / src (divide signed) — planned
 };
 
 /// Conditional jump sub-opcodes — encoded in bits 11:8.
@@ -255,11 +255,7 @@ pub const firmware: [MEM * 4]u8 = generateFirmware();
 ///   0x22: DEC BX — decrement
 ///   0x24: NOT CX — bitwise complement
 ///   0x26: NEG DX — two's complement negate
-///   0x28: XCHG AX, BX — exchange registers
-///   0x2A: ADC AX, BX — add with carry
-///   0x2C: SBB AX, BX — subtract with borrow
-///   0x2E: TEST AX, BX — bitwise AND (flags only)
-///   0x30: PUSH AX — push to stack
+///   0x28: PUSH AX — push to stack
 ///   0x32: POP BX — pop from stack
 ///   0x34: MOV AX, 0x1234 — load test value
 ///   0x38: IN AX, 0x22 — read I/O port 0x22
@@ -324,22 +320,13 @@ fn generateFirmware() [MEM * 4]u8 {
     // [0x26] NEG DX — DX = 0 - 0x10 = 0xFFF0
     w16(&b, &i, encodeAlu(.NEG, .DX, .DX));
 
-    // [0x28] XCHG AX, BX — swap AX and BX values
-    w16(&b, &i, encodeAlu(.XCHG, .AX, .BX));
-
-    // [0x2A] ADC AX, BX — AX = AX + BX + Carry (add with carry)
-    w16(&b, &i, encodeAlu(.ADC, .AX, .BX));
-
-    // [0x2C] SBB AX, BX — AX = AX - BX - Carry (subtract with borrow)
-    w16(&b, &i, encodeAlu(.SBB, .AX, .BX));
-
-    // [0x2E] TEST AX, BX — AX AND BX (flags only, result discarded)
+    // [0x28] TEST AX, BX — AX AND BX (flags only, result discarded)
     w16(&b, &i, encodeAlu(.TEST, .AX, .BX));
 
-    // [0x30] PUSH AX — push AX onto stack
+    // [0x2A] PUSH AX — push AX onto stack
     w16(&b, &i, encodePushPop(.PUSH, .AX));
 
-    // [0x32] POP BX — pop stack value into BX
+    // [0x2C] POP BX — pop stack value into BX
     w16(&b, &i, encodePushPop(.POP, .BX));
 
     // [0x34] MOV AX, 0x1234 — load test value for IN/OUT
@@ -381,46 +368,35 @@ pub fn main(init: std.process.Init) !void {
 // Test 16-bit NOP encoding: all zeros (opcode=0, dst=AX, src=AX, mode=RegReg)
 test "encode16 NOP" {
     const inst = encode16(.NOP, .AX, .AX, .RegReg);
-    // opcode=0000 dst=00 src=00 mode=00 unused=000000
     try std.testing.expectEqual(@as(u16, 0x0000), inst);
 }
 
 // Test 32-bit MOV AX, 0x00FF encoding: loads immediate 255 into AX.
-// Encoded: 0x1100FF00 (opcode=1, dst=AX, mode=Imm, imm=0x00FF)
 test "encode32 MOV AX, 0x00FF" {
     const inst = encode32(.MOV, .AX, 0x00FF);
-    // opcode=0001 dst=00 mode=01 imm=0x00FF unused=0
     try std.testing.expectEqual(@as(u32, 0x1100FF00), inst);
 }
 
 // Test ALU ADD AX, BX encoding: adds BX to AX.
-// Encoded: 0xA010 (opcode=ALU, sub_op=ADD, dst=AX, src=BX)
 test "encodeAlu ADD AX, BX" {
     const inst = encodeAlu(.ADD, .AX, .BX);
-    // opcode=1010 sub_op=0000 dst=00 src=01 unused=0000
     try std.testing.expectEqual(@as(u16, 0xA010), inst);
 }
 
 // Test ALU SUB BX, AX encoding: subtracts AX from BX.
-// Encoded: 0xA140 (opcode=ALU, sub_op=SUB, dst=BX, src=AX)
 test "encodeAlu SUB BX, AX" {
     const inst = encodeAlu(.SUB, .BX, .AX);
-    // opcode=1010 sub_op=0001 dst=01 src=00 unused=0000
     try std.testing.expectEqual(@as(u16, 0xA140), inst);
 }
 
 // Test PUSH AX encoding: push AX onto stack.
-// Encoded: 0xC000 (opcode=PushPop, reg=AX, op=PUSH)
 test "encodePushPop PUSH AX" {
     const inst = encodePushPop(.PUSH, .AX);
-    // opcode=1100 dst=00 mode=00
     try std.testing.expectEqual(@as(u16, 0xC000), inst);
 }
 
 // Test POP BX encoding: pop stack value into BX.
-// Encoded: 0xC500 (opcode=PushPop, reg=BX, op=POP)
 test "encodePushPop POP BX" {
     const inst = encodePushPop(.POP, .BX);
-    // opcode=1100 dst=01 mode=01
     try std.testing.expectEqual(@as(u16, 0xC500), inst);
 }

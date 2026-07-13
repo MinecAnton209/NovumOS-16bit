@@ -57,14 +57,16 @@ graph TB
     end
 
     subgraph Memory["Memory (64 KB)"]
-        MEM["RAM / ROM<br/>(65536 bytes)"]
+        MEM["RAM<br/>(65536 bytes)"]
     end
 
     subgraph Peripherals["Peripheral Devices"]
-        UART["UART (port 0x00)"]
-        TIMER["Timer (port 0x01)"]
-        KBD["Keyboard (port 0x02)"]
-        VGA["VGA Text Adapter"]
+        UART["UART (port 0x00 R/W)"]
+        TIMER["Timer (port 0x01 Read)"]
+        KBD["Keyboard (port 0x02 Read)"]
+        LINE_CMD["Line Cmd (port 0x03 Read)"]
+        LINE_BUF["Line Buffer (port 0x04 Read)"]
+        VGA["VGA (port 0x10 Write, 0x11 Write)"]
     end
 
     CLK --> CU_SEQ
@@ -99,12 +101,15 @@ graph TB
     ADDR_BUS --> MEM
     CONTROL_BUS --> MEM
 
-    IO_MUX <-->|I/O ports| Peripherals
+    IO_MUX <-->|"I/O ports"| Peripherals
     CONTROL_BUS --> IO_MUX
     IO_DECODE --> IO_MUX
 
-    KBD --> IO_MUX
+    UART --> IO_MUX
     TIMER --> IO_MUX
+    KBD --> IO_MUX
+    LINE_CMD --> IO_MUX
+    LINE_BUF --> IO_MUX
 ```
 
 ---
@@ -163,7 +168,6 @@ graph LR
 - Finite state machine that sequences through the phases of each instruction
 - Generates timing signals for: FETCH → DECODE → EXECUTE → WRITEBACK
 - Handles multi-cycle instructions (e.g., memory indirect addressing requires additional cycles)
-- Manages interrupts: checks INT line after each instruction completes
 
 ---
 
@@ -211,11 +215,10 @@ graph TB
 ```
 
 Each bit slice computes:
-- **Arithmetic**: Full adder sum and carry (ADD, SUB, ADC, SBB, INC, DEC, NEG)
+- **Arithmetic**: Full adder sum and carry (ADD, SUB, INC, DEC, NEG)
 - **Logic**: AND, OR, XOR, NOT operations
 - **Shifts**: SHL, SHR operations
 - **Comparison**: CMP, TEST (flags-only operations)
-- **Exchange**: XCHG (register swap)
 - **Selection**: MUX selects between arithmetic and logic result based on ALU operation code
 
 #### Chaining 4-bit Modules to 16-bit
@@ -334,13 +337,12 @@ graph TB
 | `M/IO` | Output | Memory vs I/O select (0=I/O, 1=Memory) |
 | `CLK` | Input | System clock |
 | `WAIT` | Input | Wait state input (for slow devices) |
-| `INT` | Input | Interrupt request |
 
 ---
 
 ### 6. I/O Controller
 
-Manages communication with peripheral devices through isolated I/O port addressing.
+Manages communication with peripheral devices through isolated I/O port addressing. The CPU uses a separate I/O address space (8-bit port addresses, 256 ports total) accessed via `IN` and `OUT` instructions.
 
 ```mermaid
 graph TB
@@ -355,14 +357,29 @@ graph TB
     PORT_DEC --> IO_WR
 
     subgraph Devices["I/O Ports"]
-        UART_PORT["UART: 0x00"]
-        TIMER_PORT["Timer: 0x01"]
-        KBD_PORT["Keyboard: 0x02"]
+        UART_PORT["UART: 0x00 (R/W)"]
+        TIMER_PORT["Timer: 0x01 (Read)"]
+        KBD_PORT["Keyboard: 0x02 (Read)"]
+        LINE_CMD["Line Cmd: 0x03 (Read)"]
+        LINE_BUF["Line Buffer: 0x04 (Read)"]
+        VGA_CHAR["VGA Char: 0x10 (Write)"]
+        VGA_CTRL["VGA Control: 0x11 (Write)"]
     end
 
     IO_RD <--> Devices
     IO_WR <--> Devices
 ```
+
+| Port | Peripheral | R/W | Description |
+|------|------------|-----|-------------|
+| 0x00 | UART | R/W | Terminal I/O (read = receive, write = transmit) |
+| 0x01 | Timer | Read | Cycle counter (low 16 bits) |
+| 0x02 | Keyboard | Read | Scancode from ring buffer (0 = empty) |
+| 0x03 | Line Cmd | Read | Command ID (0=none, 1=help, 2=clear, 3=reboot, 4=info, 5=dump, 6=halt, 7=unknown); clears on read |
+| 0x04 | Line Buffer | Read | Next byte from line buffer (0 = empty) |
+| 0x10 | VGA | Write | Character output (low byte = char) |
+| 0x11 | VGA Control | Write | 0x0001 = clear screen, 0x0002 = flush |
+| 0x05–0xFF | Generic | R/W | General-purpose storage (256 × 16-bit) |
 
 See [Memory Map - I/O Port Map](memory-map.md#io-port-map) for the complete port allocation.
 
@@ -408,7 +425,7 @@ graph TB
 | Data bus | 16-bit | Instruction/data transfer |
 | Address bus | 16-bit | Memory addressing (64 KB) |
 | I/O address bus | 8-bit (decoded from 16-bit) | Peripheral port addressing |
-| Control bus | 4+ signals | RD, WR, M/IO, interrupt |
+| Control bus | 4+ signals | RD, WR, M/IO |
 
 ---
 
@@ -451,14 +468,14 @@ Each instruction completes in a fixed number of clock cycles, determined by the 
 
 ## Interrupt Handling
 
-When the `INT` instruction is executed or the `INT` line is asserted:
+When the `INT` instruction is executed:
 
 1. Current instruction completes (never interrupted mid-cycle)
-2. Program Counter (IP) is pushed onto the stack
-3. FLAGS are saved on the stack
-4. IP is loaded with the interrupt vector address
+2. FLAGS are pushed onto the stack
+3. Program Counter (IP) is pushed onto the stack
+4. IP is loaded with `vector × 4` (handler address = vector entry point)
 5. Interrupt service routine executes
-6. `RET` (or IRET) restores FLAGS and IP from stack
+6. `IRET` pops IP then FLAGS from stack
 
 ```mermaid
 sequenceDiagram
@@ -469,9 +486,9 @@ sequenceDiagram
     Note over CPU: Current instruction completes
     CPU->>CPU: Push FLAGS to stack
     CPU->>CPU: Push IP to stack
-    CPU->>CPU: Load IP from vector table
+    CPU->>CPU: IP = vector × 4
     CPU->>ISR: Execute ISR
-    ISR->>CPU: IRET (pop IP, FLAGS)
+    ISR->>CPU: IRET (pop IP, then FLAGS)
     Note over CPU: Resume normal execution
 ```
 
@@ -479,7 +496,7 @@ sequenceDiagram
 
 ## Summary
 
-The NovumOS-16bit CPU is a complete, working processor built from fundamental TTL logic. The NAND-based ALU, RISC-like ISA, and standard peripheral interfaces create a practical and educational platform for understanding computer architecture from the ground up.
+The NovumOS-16bit CPU is a complete, working processor built from fundamental TTL logic. The NAND-based ALU, simple RISC-like ISA, and I/O-port-mapped peripherals create a practical and educational platform for understanding computer architecture from the ground up.
 
 | Block | Key Function |
 |-------|-------------|

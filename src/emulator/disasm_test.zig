@@ -181,30 +181,6 @@ test "disasm: NEG DX" {
     try std.testing.expectEqualStrings("NEG DX, DX", getText(&r));
 }
 
-test "disasm: XCHG AX, BX" {
-    var mem: [4]u8 = std.mem.zeroes([4]u8);
-    write16(&mem, 0, ISA.encodeAlu(.XCHG, .AX, .BX));
-    var dis = Disassembler.init(&mem);
-    const r = dis.disassemble(0);
-    try std.testing.expectEqualStrings("XCHG AX, BX", getText(&r));
-}
-
-test "disasm: ADC AX, BX" {
-    var mem: [4]u8 = std.mem.zeroes([4]u8);
-    write16(&mem, 0, ISA.encodeAlu(.ADC, .AX, .BX));
-    var dis = Disassembler.init(&mem);
-    const r = dis.disassemble(0);
-    try std.testing.expectEqualStrings("ADC AX, BX", getText(&r));
-}
-
-test "disasm: SBB AX, BX" {
-    var mem: [4]u8 = std.mem.zeroes([4]u8);
-    write16(&mem, 0, ISA.encodeAlu(.SBB, .AX, .BX));
-    var dis = Disassembler.init(&mem);
-    const r = dis.disassemble(0);
-    try std.testing.expectEqualStrings("SBB AX, BX", getText(&r));
-}
-
 test "disasm: TEST AX, BX" {
     var mem: [4]u8 = std.mem.zeroes([4]u8);
     write16(&mem, 0, ISA.encodeAlu(.TEST, .AX, .BX));

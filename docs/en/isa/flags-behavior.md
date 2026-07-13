@@ -31,7 +31,7 @@ Bit:  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
 | Bit | Name | Set when... | Cleared when... |
 |-----|------|-------------|-----------------|
 | 0   | **Z** (Zero) | Operation result equals 0x0000 | Operation result is non-zero |
-| 1   | **C** (Carry) | Unsigned overflow (ADD: result > 0xFFFF) or unsigned borrow (SUB: source > dest) | Operation does not produce carry/borrow |
+| 1   | **C** (Carry) | Unsigned overflow (ADD: result > 0xFFFF) or unsigned borrow (SUB: source > dest) or shift-out bit is 1 (SHL/SHR) | Operation does not produce carry/borrow or shift-out bit is 0 |
 | 2   | **S** (Sign) | Result MSB (bit 15) is 1 | Result MSB (bit 15) is 0 |
 | 3–15| Reserved | Always 0 | Always 0 |
 
@@ -89,33 +89,46 @@ flowchart LR
 
 **Usage:**
 
-- After SUB/AND/OR/XOR: check if values are equal or result is zero
-- After loop counter decrement: check if loop is complete
-- After AND with mask: test if specific bits are set
+- After ALU SUB/CMP: check if values are equal
+- After loop counter decrement (DEC): check if loop is complete
+- After AND with mask (TEST): test if specific bits are set
 
 ### C — Carry Flag
 
-**Purpose:** Indicates unsigned overflow or borrow in arithmetic operations.
+**Purpose:** Indicates unsigned overflow or borrow in arithmetic operations, or captures the last shifted-out bit in shift operations.
 
-**Semantics for ADD:**
+**Semantics for ADD (ALU sub-op 0x0):**
 
 - **C = 1:** The addition produced a carry out of bit 15 (result > 0xFFFF unsigned)
 - **C = 0:** No carry out occurred
 
-**Semantics for SUB:**
+**Semantics for SUB and CMP (ALU sub-ops 0x1, 0x2):**
 
 - **C = 1:** A borrow occurred (source > destination unsigned)
 - **C = 0:** No borrow (destination ≥ source unsigned)
 
-**Semantics for SHL:**
+**Semantics for NEG (ALU sub-op 0xC):**
+
+- **C = 1:** Result is non-zero (input was non-zero)
+- **C = 0:** Result is zero (input was zero)
+
+**Semantics for SHL (ALU sub-op 0x7):**
 
 - **C = 1:** The last bit shifted out of the MSB was 1
 - **C = 0:** The last bit shifted out of the MSB was 0
 
-**Semantics for SHR:**
+**Semantics for SHR (ALU sub-op 0x8):**
 
 - **C = 1:** The last bit shifted out of the LSB was 1
 - **C = 0:** The last bit shifted out of the LSB was 0
+
+**Semantics for INC/DEC (ALU sub-ops 0x9, 0xA):**
+
+- Carry is **not affected** by INC or DEC. This preserves the carry flag across loop counter updates in multi-word arithmetic.
+
+**Semantics for AND/OR/XOR (ALU sub-ops 0x4, 0x5, 0x6):**
+
+- Carry is **cleared** to 0.
 
 **Note on SUB carry inversion:**
 
@@ -137,8 +150,8 @@ flowchart TD
 
 This inversion means:
 
-| Condition | C flag after SUB A, B |
-|-----------|----------------------|
+| Condition | C flag after CMP/SUB A, B |
+|-----------|---------------------------|
 | A > B (unsigned) | 0 |
 | A = B (unsigned) | 0 |
 | A < B (unsigned) | 1 |
@@ -162,29 +175,43 @@ This inversion means:
 
 ### Complete Flag Reference Table
 
-| Instruction | Z | C | S | Notes |
-|-------------|---|---|---|-------|
-| **MOV**     | — | — | — | No flags modified |
-| **ADD**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (carry out); S = (MSB) |
-| **SUB**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (borrow); S = (MSB) |
-| **AND**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
-| **OR**      | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
-| **XOR**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
-| **SHL**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (last bit out MSB); S = (MSB) |
-| **SHR**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (last bit out LSB); S = (MSB) |
-| **JMP**     | — | — | — | No flags tested or modified |
-| **JZ**      | — | — | — | Tests Z, does not modify flags |
-| **JNZ**     | — | — | — | Tests Z, does not modify flags |
-| **CALL**    | — | — | — | No flags modified |
-| **RET**     | — | — | — | No flags modified |
-| **PUSH**    | — | — | — | No flags modified |
-| **POP**     | — | — | — | No flags modified |
-| **IN**      | — | — | — | No flags modified |
-| **OUT**     | — | — | — | No flags modified |
-| **INT**     | — | — | — | FLAGS saved to stack, not modified |
-| **HLT**     | — | — | — | No flags modified |
+| Instruction     | Z | C | S | Notes |
+|-----------------|---|---|---|-------|
+| **NOP**         | — | — | — | No flags modified |
+| **MOV**         | — | — | — | No flags modified |
+| **JMP**         | — | — | — | No flags tested or modified |
+| **CALL**        | — | — | — | No flags modified |
+| **RET**         | — | — | — | No flags modified |
+| **INT**         | — | — | — | FLAGS saved to stack, not modified |
+| **IRET**        | ✓ | ✓ | ✓ | FLAGS restored from stack |
+| **HLT**         | — | — | — | No flags modified |
+| **IN**          | — | — | — | No flags modified |
+| **OUT**         | — | — | — | No flags modified |
+| **PUSH**        | — | — | — | No flags modified |
+| **POP**         | — | — | — | No flags modified |
+| **ALU ADD**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (carry out); S = (MSB) |
+| **ALU SUB**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (borrow); S = (MSB) |
+| **ALU CMP**     | ✓ | ✓ | ✓ | Same as SUB, result discarded |
+| **ALU TEST**    | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C cleared |
+| **ALU AND**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C cleared |
+| **ALU OR**      | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C cleared |
+| **ALU XOR**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C cleared |
+| **ALU SHL**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (last bit out MSB); S = (MSB) |
+| **ALU SHR**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (last bit out LSB); S = (MSB) |
+| **ALU INC**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
+| **ALU DEC**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
+| **ALU NOT**     | — | — | — | No flags modified |
+| **ALU NEG**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (result ≠ 0); S = (MSB) |
+| **ALU MUL**     | TBD | TBD | TBD | Planned |
+| **ALU DIV**     | TBD | TBD | TBD | Planned |
+| **JZ**          | — | — | — | Tests Z, does not modify flags |
+| **JNZ**         | — | — | — | Tests Z, does not modify flags |
+| **JC**          | — | — | — | Tests C, does not modify flags |
+| **JNC**         | — | — | — | Tests C, does not modify flags |
+| **JS**          | — | — | — | Tests S, does not modify flags |
+| **JNS**         | — | — | — | Tests S, does not modify flags |
 
-**Legend:** ✓ = modified, — = unchanged
+**Legend:** ✓ = modified, — = unchanged, TBD = to be determined
 
 ### Flag Update Timing
 
@@ -275,83 +302,74 @@ flowchart TD
 
 ## Carry Propagation in Multi-Word Arithmetic
 
-The carry flag enables arithmetic on values larger than 16 bits by chaining operations across multiple words.
+The carry flag enables arithmetic on values larger than 16 bits by chaining operations across multiple words. Since the ISA does not include ADC (add with carry), carry propagation requires explicit checks and branches.
 
 ### 32-bit Addition
 
-To add two 32-bit values stored in register pairs (high:DX, low:AX for each operand):
+To add two 32-bit values stored in register pairs:
 
 ```mermaid
-sequenceDiagram
-    participant ALU as ALU
-    participant F as FLAGS
-    participant AX as AX (result low)
-    participant DX as DX (result high)
-
-    Note over AX,DX: a = (DX:AX), b = (DX:CX)
-    Note over AX,DX: Step 1: Add low words
-    ALU->>AX: ADD AX, CX
-    ALU->>F: C = 1 if carry from low word
-    Note over AX,DX: Step 2: Add high words with carry
-    ALU->>DX: ADD DX, (b_high)
-    Note over F: ADD uses existing C flag as carry-in
-    ALU->>F: New C from high word addition
-    Note over AX,DX: Result in DX:AX
+flowchart TD
+    subgraph "32-bit addition: (DX:AX) += (high:low)"
+        A1["ADD AX, low_word"] -->|"C=carry"| CHECK{JC?}
+        CHECK -->|"carry set"| C1["ADD DX, high_word"]
+        CHECK -->|"carry set"| C2["ADD DX, 1"]
+        CHECK -->|"no carry"| C3["ADD DX, high_word (no increment)"]
+    end
 ```
 
-**Step-by-step explanation:**
+**Step-by-step:**
 
-1. **Low-word addition:** `ADD AX, CX` — adds the low 16 bits. If the result exceeds 0xFFFF, C is set.
-2. **High-word addition:** `ADD DX, (b_high)` — adds the high 16 bits. The ADD instruction incorporates the carry flag from step 1, effectively performing `DX + b_high + C`.
+1. `ADD AX, low_word` — adds the low 16 bits. If C is set, a carry must be propagated.
+2. `ADD DX, high_word` — adds the high 16 bits.
+3. If C was set after step 1, `ADD DX, 1` to incorporate the carry.
 
-This gives a correct 32-bit addition: `(DX:AX) = (DX:AX) + (b_high:CX)`.
+More practically, the carry can be handled by loading it into a register and adding:
+
+```
+ADD  AX, low_word       ; C = carry from low word
+MOV  CX, 0
+ADC  CX, 0              ; Without ADC, this must be emulated
+; Alternatively, use a branch:
+JC   .add_carry
+JMP  .no_carry
+.add_carry:
+ADD  DX, high_word
+ADD  DX, 1
+JMP  .done
+.no_carry:
+ADD  DX, high_word
+.done:
+```
+
+### Carry Preservation with INC/DEC
+
+INC and DEC (ALU sub-ops 0x9, 0xA) do **not** affect the carry flag. This allows loop counters to be updated without disturbing the carry state:
+
+```
+ADD AX, BX              ; C = carry from addition
+...                     ; (no ALU operations that modify C)
+DEC CX                  ; CX--, C preserved
+JNZ loop                ; continue loop without losing carry
+; Carry from the original ADD is still available
+```
 
 ### 32-bit Subtraction
 
-The same pattern applies, but the carry/borrow behavior is inverted:
+The borrow propagates similarly:
 
-1. **Low-word subtraction:** `SUB AX, CX` — C is set if a borrow occurred (CX > AX).
-2. **High-word subtraction:** `SUB DX, (b_high)` — C is set if a borrow occurred. The SUB instruction incorporates the previous borrow.
-
-**Important:** After `SUB AX, CX`, the C flag indicates whether a borrow is needed from the high word. The next `SUB DX, (b_high)` must account for this borrow.
-
-### 48-bit and 64-bit Arithmetic
-
-For wider arithmetic, extend the chain:
-
-```mermaid
-flowchart LR
-    subgraph "64-bit addition: (DX:CX:BX:AX) + (DX2:CX2:BX2:AX2)"
-        A1["ADD AX, AX2"] -->|carry| A2["ADD BX, BX2"]
-        A2 -->|carry| A3["ADD CX, CX2"]
-        A3 -->|carry| A4["ADD DX, DX2"]
-    end
 ```
-
-Each step propagates the carry to the next higher word. The final carry out (if any) indicates 64-bit unsigned overflow.
-
-### Multi-Precision Subtraction
-
-For multi-precision subtraction, the borrow propagates identically:
-
-```mermaid
-flowchart LR
-    subgraph "64-bit subtraction"
-        S1["SUB AX, AX2"] -->|borrow| S2["SUB BX, BX2"]
-        S2 -->|borrow| S3["SUB CX, CX2"]
-        S3 -->|borrow| S4["SUB DX, DX2"]
-    end
+SUB AX, low_word        ; C = borrow
+; Check C and branch to subtract 1 from high word if needed
+SUB DX, high_word       ; subtract high word
+; If C was 1 (borrow needed), subtract 1 more from DX
 ```
-
-After `SUB AX, AX2`:
-- If C=0: no borrow needed, next SUB operates normally
-- If C=1: borrow needed, next SUB incorporates this borrow
 
 ---
 
 ## Shift Flag Behavior
 
-### SHL — Shift Left
+### SHL — Shift Left (ALU sub-op 0x7)
 
 SHL shifts all bits toward the MSB. The MSB is shifted into the carry flag. The LSB is filled with zero.
 
@@ -391,7 +409,7 @@ For a shift by N bits, the carry flag is set to bit (15 − N) of the original v
 
 Shifting a 16-bit register left by 16 produces zero. The carry flag is set to the original LSB (bit 0), which is the last bit to exit the register.
 
-### SHR — Shift Right
+### SHR — Shift Right (ALU sub-op 0x8)
 
 SHR shifts all bits toward the LSB. The LSB is shifted into the carry flag. The MSB is filled with zero (logical shift, not arithmetic).
 
@@ -436,37 +454,35 @@ Shifting a 16-bit register right by 16 produces zero. The carry flag is set to t
 
 ## Comparison and Testing
 
-The NovumOS-16bit does not have a dedicated CMP instruction. Comparisons are performed using SUB or AND, then inspecting the flags.
+The NovumOS-16bit provides CMP (ALU sub-op 0x2) and TEST (ALU sub-op 0x3) for comparison without modifying register values.
 
 ### Equality Test
 
-To test if AX equals BX:
+To test if AX equals BX using CMP:
 
 ```mermaid
 flowchart TD
-    A["XOR AX, BX"] --> B{"Z flag?"}
+    A["CMP AX, BX"] --> B{"Z flag?"}
     B -- "Z = 1" --> C["AX == BX"]
     B -- "Z = 0" --> D["AX ≠ BX"]
 ```
 
-Using XOR preserves the original value (destination is overwritten with the XOR result). The Z flag indicates whether the values were equal.
-
-**Alternative using SUB:** `SUB AX, BX` destroys the original value of AX.
+CMP is non-destructive — it only sets flags. For a destructive test that also zeros a register: `XOR AX, AX` (sets Z=1).
 
 ### Unsigned Greater Than
 
-To test if AX > BX (unsigned):
+To test if AX > BX (unsigned) using CMP:
 
 ```mermaid
 flowchart TD
-    A["SUB AX, BX"] --> B{"C flag?"}
+    A["CMP AX, BX"] --> B{"C flag?"}
     B -- "C = 0" --> C{"Z flag?"}
     B -- "C = 1" --> D["AX < BX"]
     C -- "Z = 0" --> E["AX > BX"]
     C -- "Z = 1" --> F["AX == BX"]
 ```
 
-**Logic:** After `SUB AX, BX`:
+**Logic:** After `CMP AX, BX`:
 - C = 0 and Z = 0: no borrow, not equal → AX > BX
 - C = 0 and Z = 1: no borrow, equal → AX == BX
 - C = 1: borrow occurred → AX < BX
@@ -475,7 +491,7 @@ flowchart TD
 
 To test if AX < BX (unsigned):
 
-After `SUB AX, BX`: if C = 1, then AX < BX.
+After `CMP AX, BX`: if C = 1, then AX < BX.
 
 ### Signed Comparison
 
@@ -485,7 +501,7 @@ Signed comparison is more complex without an overflow flag. The S flag alone is 
 
 ```mermaid
 flowchart TD
-    A["SUB AX, BX"] --> B{"S flag?"}
+    A["CMP AX, BX"] --> B{"S flag?"}
     B -- "S = 0 (positive result)" --> C{"Z flag?"}
     B -- "S = 1 (negative result)" --> D{"Z flag?"}
     C -- "Z = 0" --> E["AX > BX (signed)"]
@@ -496,28 +512,22 @@ flowchart TD
 
 **Warning:** This fails when overflow occurs (e.g., large positive − large negative = overflow). For reliable signed comparison, the software must check for overflow conditions manually.
 
-### Bit Testing
+### Bit Testing with TEST
 
 To test if specific bits are set in a value:
 
 ```mermaid
 flowchart TD
-    A["AND AX, mask"] --> B{"Z flag?"}
+    A["TEST AX, mask"] --> B{"Z flag?"}
     B -- "Z = 1" --> C["No bits in mask are set"]
     B -- "Z = 0" --> D["At least one bit in mask is set"]
 ```
 
-The AND operation isolates the bits specified by the mask. If the result is zero, none of the masked bits were set.
+TEST performs the AND operation but discards the result, only updating flags. This is non-destructive — the original register value is preserved.
 
 **Example: Test bit 3 of AX**
 
-`AND AX, 0x0008` — if Z = 1, bit 3 is clear; if Z = 0, bit 3 is set.
-
-### Bit Testing Without Destruction
-
-To test bits without modifying the source register, use a scratch register:
-
-`MOV CX, AX` then `AND CX, mask` — tests AX's bits without destroying AX.
+`TEST AX, 0x0008` — if Z = 1, bit 3 is clear; if Z = 0, bit 3 is set.
 
 ---
 
@@ -527,11 +537,11 @@ To test bits without modifying the source register, use a scratch register:
 
 | Desired Flags | How to achieve |
 |---------------|----------------|
-| Z=1, C=0, S=0 | `MOV AX, 0` (if immediate MOV available) or `XOR AX, AX` |
+| Z=1, C=0, S=0 | `XOR AX, AX` or `SUB AX, AX` |
 | Z=0, C=0, S=0 | `MOV AX, 1` or `OR AX, AX` (if AX was already non-zero) |
 | Z=0, C=0, S=1 | `MOV AX, 0x8000` |
 | Z=0, C=1, S=0 | `ADD AX, 0xFFFF` when AX = 1 (produces carry, result = 0x0000... need careful) |
-| Z=1, C=1, S=0 | `SUB AX, AX` (Z=1, C=0, S=0) then `ADD AX, 0x10000` is impossible in 16-bit |
+| Z=1, C=1, S=0 | `SUB AX, AX` (Z=1, C=0, S=0) then impossible to set C with 16-bit ops without changing Z |
 
 **Note:** Some flag combinations are impossible to achieve naturally in 16-bit arithmetic. The CPU does not provide direct manipulation of individual flags.
 
@@ -547,12 +557,16 @@ Data transfer instructions (MOV, PUSH, POP) do not modify flags. This means flag
 **Safe flag-consuming instructions:**
 
 - JZ, JNZ: test Z without modifying flags
+- JC, JNC: test C without modifying flags
+- JS, JNS: test S without modifying flags
 - Any subsequent ALU instruction: overwrites all flags
 
 **Flag-destructive instructions:**
 
-- ADD, SUB, AND, OR, XOR, SHL, SHR: all flags updated from result
-- MOV, PUSH, POP, IN, OUT, JMP, CALL, RET, HLT: flags unchanged
+- All ALU operations: flags updated from result (except NOT which doesn't modify flags)
+- MOV, PUSH, POP, IN, OUT, JMP, CALL, RET, NOP, HLT: flags unchanged
+- INT: FLAGS saved to stack, not modified
+- IRET: FLAGS restored from stack (all flags potentially modified)
 
 ### Flag Hazards
 
@@ -578,35 +592,54 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    L["Low word op"] -->|"C flag"| H["High word op"]
-    H -->|"C flag"| HH["Higher word op"]
+    L["Low word ADD"] -->|"C flag"| B{Branch on carry}
+    B -->|"carry"| H["ADD high_word + 1"]
+    B -->|"no carry"| H2["ADD high_word"]
 ```
 
-**Loop with counter:**
+**Loop with counter (carry-preserving):**
 
 ```mermaid
 flowchart TD
-    A["MOV CX, count"] --> B["Loop body"]
-    B --> C["SUB CX, 1"]
+    A["MOV CX, count"] --> B["ADD AX, BX ; C set"]
+    B --> C["DEC CX ; C preserved"]
     C --> D{"Z flag?"}
     D -- "Z=0" --> B
-    D -- "Z=1" --> E["Exit loop"]
+    D -- "Z=1" --> E["Handle carry from C flag"]
+```
+
+**Sign test:**
+
+```mermaid
+flowchart LR
+    OP["ALU operation"] --> TEST{"JS / JNS"}
+    TEST -->|"S=1"| NEGATIVE["Result was negative"]
+    TEST -->|"S=0"| POSITIVE["Result was non-negative"]
+```
+
+**Carry test:**
+
+```mermaid
+flowchart LR
+    OP["ALU operation"] --> TEST{"JC / JNC"}
+    TEST -->|"C=1"| CARRY["Carry/borrow occurred"]
+    TEST -->|"C=0"| NO_CARRY["No carry/borrow"]
 ```
 
 ---
 
 ## Quick Reference: Flag Behavior by Instruction
 
-### ADD
+### ALU ADD (AluOp 0x0)
 
 ```
 Result = dst + src
 Z ← (Result == 0)
-C ← (Result < dst)     // unsigned overflow
+C ← (carry out of bit 15)
 S ← (Result[15] == 1)
 ```
 
-### SUB
+### ALU SUB / CMP (AluOp 0x1 / 0x2)
 
 ```
 Result = dst - src
@@ -615,16 +648,25 @@ C ← (src > dst)        // unsigned borrow
 S ← (Result[15] == 1)
 ```
 
-### AND / OR / XOR
+### ALU TEST (AluOp 0x3)
+
+```
+Result = dst & src
+Z ← (Result == 0)
+C ← 0 (cleared)
+S ← (Result[15] == 1)
+```
+
+### ALU AND / OR / XOR (AluOp 0x4 / 0x5 / 0x6)
 
 ```
 Result = dst OP src
 Z ← (Result == 0)
-C ← (unchanged)
+C ← 0 (cleared)
 S ← (Result[15] == 1)
 ```
 
-### SHL
+### ALU SHL (AluOp 0x7)
 
 ```
 for i in 1..count:
@@ -634,14 +676,60 @@ Z ← (dst == 0)
 S ← (dst[15] == 1)
 ```
 
-### SHR
+### ALU SHR (AluOp 0x8)
 
 ```
 for i in 1..count:
     C ← dst[0]
     dst ← dst >> 1
 Z ← (dst == 0)
-S ← 0   // MSB always 0 after logical shift
+S ← (dst[15] == 1)   // always 0 if count > 0
+```
+
+### ALU INC (AluOp 0x9)
+
+```
+Result = dst + 1
+Z ← (Result == 0)
+C ← unchanged
+S ← (Result[15] == 1)
+```
+
+### ALU DEC (AluOp 0xA)
+
+```
+Result = dst - 1
+Z ← (Result == 0)
+C ← unchanged
+S ← (Result[15] == 1)
+```
+
+### ALU NOT (AluOp 0xB)
+
+```
+dst ← ~dst
+(no flags affected)
+```
+
+### ALU NEG (AluOp 0xC)
+
+```
+Result = 0 - dst
+Z ← (Result == 0)
+C ← (Result != 0)     // set if input was non-zero
+S ← (Result[15] == 1)
+```
+
+### ALU MUL (AluOp 0xD — planned)
+
+```
+Behavior TBD
+```
+
+### ALU DIV (AluOp 0xE — planned)
+
+```
+Behavior TBD
 ```
 
 ---

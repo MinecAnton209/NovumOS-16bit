@@ -6,10 +6,10 @@ NovumOS uses a simplified UART implementation for terminal I/O. It is not a 1655
 
 ## Port Address
 
-| Port | Direction | Description          |
-|------|-----------|----------------------|
-| 0x00 | OUT       | Send character       |
-| 0x00 | IN        | Receive character    |
+| Port | Direction | Description |
+|------|-----------|-------------|
+| 0x00 | OUT | Send character |
+| 0x00 | IN | Receive character |
 
 ## OUT 0x00 — Send Character
 
@@ -45,12 +45,19 @@ wait_for_input:
 ; AL now contains the pressed character
 ```
 
+## Interaction with the Shell and Line Buffer
+
+The UART works at the raw character level. In interactive mode, the shell firmware reads characters from port 0x00, echoes them to the VGA (port 0x10), and builds a line buffer internally. When Enter is pressed, the firmware parses the command and writes results back through the UART.
+
+For higher-level command input, the line interface at ports 0x03 (cmd_id) and 0x04 (line buffer) provides pre-parsed shell commands — see the [Peripheral Overview](overview.md) for details. The emulator's keyboard handler fills both the UART RX buffer (for character-by-character polling) and the line buffer (for command-level access). Firmware can use either method.
+
 ## Emulator Behavior
 
-- **TX buffer**: Characters written to port 0x00 are buffered by the emulator and displayed in the terminal window. The buffer is flushed after each write.
+- **TX buffer**: Characters written to port 0x00 are buffered by the emulator and displayed in the terminal. The buffer is flushed after each write.
 - **RX polling**: The emulator captures keyboard input. If the user has pressed a key since the last read, that key is returned. Otherwise `0` is returned.
 - **No blocking**: Reads never block the CPU. If nothing is available, the read returns immediately with `0`.
 - **No interrupts**: All input must be polled. There is no IRQ line for keyboard or serial input.
+- **VGA mirror**: Characters written to the VGA (port 0x10) are also mirrored to the UART TX buffer, so terminal output occurs even without explicit UART writes.
 
 ## Limitations
 

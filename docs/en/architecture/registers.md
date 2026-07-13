@@ -39,7 +39,7 @@ graph TB
 | DX | Data | 16-bit | `11` | Secondary data, I/O port address | Yes | Read/Write |
 | IP/PC | Program Counter | 16-bit | — | Address of next instruction | Auto | Read-only (auto-increment) |
 | SP | Stack Pointer | 16-bit | — | Top of stack address | Auto | Read/Write (by PUSH/POP/CALL/RET) |
-| FLAGS | Flags | 16-bit | — | Condition codes (Z, C, S) | Auto | Read/Write (by arithmetic, PUSHF/POPF) |
+| FLAGS | Flags | 16-bit | — | Condition codes (Z, C, S) | Auto | Read/Write (by ALU, PUSHF/POPF) |
 
 ---
 
@@ -53,8 +53,8 @@ The primary register for arithmetic and logic operations. Most ALU operations us
 |----------|-------------|
 | Arithmetic result | `ADD AX, BX` → AX = AX + BX |
 | Logic result | `AND AX, CX` → AX = AX AND CX |
-| I/O data (IN) | `IN AX, DX` → Read from port DX into AX |
-| I/O data (OUT) | `OUT DX, AX` → Write AX to port DX |
+| I/O data (IN) | `IN AX, port` → Read from port into AX |
+| I/O data (OUT) | `OUT port, AX` → Write AX to port |
 | Memory load | `MOV AX, [BX]` → Load from address in BX to AX |
 | Memory store | `MOV [BX], AX` → Store AX to address in BX |
 
@@ -84,10 +84,9 @@ Secondary data register. Used for I/O port addressing and as a second operand.
 
 | Use Case | Description |
 |----------|-------------|
-| I/O port address | `IN AX, DX` → Read from port DX |
-| I/O data | `OUT DX, AX` → Write AX to port DX |
+| I/O port address | `OUT port, AX` → Port specified by immediate |
+| I/O data | `OUT port, AX` → Write AX to port |
 | Second operand | `ADD AX, DX` → AX = AX + DX |
-| Extended multiply | Can hold high word of multiply result |
 
 ---
 
@@ -100,15 +99,15 @@ Holds the address of the **next instruction** to be fetched from memory.
 | Property | Value |
 |----------|-------|
 | Width | 16-bit |
-| Initial value | `0x0000` (boot address) |
-| Update | Auto-incremented by 1 (or 2 for 32-bit instructions) after each fetch |
-| Branching | Overwritten by JMP, JZ, JNZ, CALL, INT |
+| Initial value | `0x0000` (boot address — first instruction at 0x0000) |
+| Update | Auto-incremented by 2 (16-bit inst) or 4 (32-bit inst) after each fetch |
+| Branching | Overwritten by JMP, JZ, JNZ, JC, JNC, JS, JNS, CALL, INT, IRET |
 
 ```mermaid
 graph LR
     IP["IP<br/>(current)"] -->|"Fetch instruction"| MEM["Memory"]
     MEM -->|"Instruction word"| IR["Instruction Register"]
-    IP -->|"Auto-increment"| IP_INC["IP + 1 or +2"]
+    IP -->|"Auto-increment"| IP_INC["IP + 2 or +4"]
     IP_INC -->|"Next cycle"| IP
 ```
 
@@ -120,10 +119,10 @@ graph LR
 | 32-bit (long) | 2 | IP += 4 |
 
 The IP is **not directly writable** by user instructions. It can only be modified by:
-- Jump instructions (`JMP`, `JZ`, `JNZ`)
+- Jump instructions (`JMP`, `JZ`, `JNZ`, `JC`, `JNC`, `JS`, `JNS`)
 - Subroutine call (`CALL`)
 - Interrupt (`INT`)
-- Return (`RET`)
+- Return (`RET`, `IRET`)
 - Reset/boot
 
 ### SP — Stack Pointer
@@ -133,17 +132,20 @@ Holds the address of the **top of the stack** in memory.
 | Property | Value |
 |----------|-------|
 | Width | 16-bit |
+| Initial value | `0xFFFE` (top of memory) |
 | Growth direction | Downward (toward lower addresses) |
 | PUSH | SP = SP - 2; word[SP] = value |
 | POP | value = word[SP]; SP = SP + 2 |
 | CALL | Push IP; SP -= 2; IP = target |
 | RET | Pop IP from stack; SP += 2 |
+| INT | Push FLAGS; Push IP; jump to handler |
+| IRET | Pop IP; Pop FLAGS |
 
 ```mermaid
 graph TB
     subgraph Stack["Stack in Memory"]
         direction TB
-        HIGH["High Address (initial SP)"]
+        HIGH["High Address (initial SP = 0xFFFE)"]
         PUSH1["PUSH #1 → SP decreases by 2"]
         PUSH2["PUSH #2 → SP decreases by 2"]
         TOP["← Current SP"]
@@ -159,8 +161,8 @@ graph TB
 | `POP reg` | SP = SP + 2 | Load word (2 bytes), increment SP |
 | `CALL` | SP = SP - 2 | Push return address (2 bytes) |
 | `RET` | SP = SP + 2 | Pop return address (2 bytes) |
-| `INT` | SP = SP - 2 | Push FLAGS + IP |
-| `IRET` | SP = SP + 2 | Pop IP + FLAGS |
+| `INT` | SP = SP - 4 | Push FLAGS (2) + IP (2) |
+| `IRET` | SP = SP + 4 | Pop IP (2) + FLAGS (2) |
 
 ---
 
@@ -173,7 +175,7 @@ The FLAGS register holds condition codes set by ALU operations and tested by con
 ```mermaid
 graph LR
     subgraph FLAGS["FLAGS Register (16-bit)"]
-        B15["15"] 
+        B15["15"]
         B14["14"]
         B13["13"]
         B12["12"]
@@ -201,8 +203,8 @@ graph LR
 | Bit | Name | Set When | Cleared When | Used By |
 |-----|------|----------|--------------|---------|
 | 0 | **Z** (Zero) | ALU result is all zeros | ALU result is non-zero | `JZ` (jump if Z=1), `JNZ` (jump if Z=0) |
-| 1 | **C** (Carry) | Arithmetic produces carry out of bit 15 (addition) or borrow (subtraction) | No carry/borrow | `JC` (if added), unsigned overflow detection |
-| 2 | **S** (Sign) | ALU result bit 15 is 1 (negative in two's complement) | Result bit 15 is 0 (positive) | `JS` (if added), signed comparison |
+| 1 | **C** (Carry) | Arithmetic produces carry (addition) or borrow (subtraction) | No carry/borrow | `JC` (jump if C=1), `JNC` (jump if C=0) |
+| 2 | **S** (Sign) | ALU result bit 15 is 1 (negative in two's complement) | Result bit 15 is 0 (positive) | `JS` (jump if S=1), `JNS` (jump if S=0) |
 | 3–15 | Reserved | — | — | Unused (read as 0) |
 
 ### How Flags Are Updated
@@ -215,18 +217,15 @@ Flags are updated **atomically** at the end of each ALU operation:
 | `SUB` | ✓ Set | ✓ Set | ✓ Set |
 | `CMP` | ✓ Set | ✓ Set | ✓ Set |
 | `TEST` | ✓ Set | ✗ Cleared | ✗ Cleared |
-| `ADC` | ✓ Set | ✓ Set | ✓ Set |
-| `SBB` | ✓ Set | ✓ Set | ✓ Set |
 | `AND` | ✓ Set | ✗ Cleared | ✗ Cleared |
 | `OR` | ✓ Set | ✗ Cleared | ✗ Cleared |
 | `XOR` | ✓ Set | ✗ Cleared | ✗ Cleared |
 | `SHL` | ✓ Set | Last shifted-out bit | ✓ Set |
 | `SHR` | ✓ Set | Last shifted-out bit | ✓ Set |
-| `INC` | ✓ Set | ✗ Cleared | ✓ Set |
-| `DEC` | ✓ Set | ✗ Cleared | ✓ Set |
+| `INC` | ✓ Set | ✗ Unchanged | ✓ Set |
+| `DEC` | ✓ Set | ✗ Unchanged | ✓ Set |
 | `NOT` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
-| `NEG` | ✓ Set | ✓ Set | ✓ Set |
-| `XCHG` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
+| `NEG` | ✓ Set | ✓ Set (if result ≠ 0) | ✓ Set |
 | `MOV` | ✗ Unchanged | ✗ Unchanged | ✗ Unchanged |
 
 ### Flag Update Logic
@@ -260,36 +259,14 @@ General-purpose registers are encoded using 2 bits in instruction words:
 | `11` | DX | Data |
 
 This encoding appears in:
-- **Source register** field (bits [5:4] in 16-bit format)
-- **Destination register** field (bits [7:6] in 16-bit format)
-- **Register-indirect addressing** (base register selector)
+- **Destination register** field (bits [11:10] in 16-bit format)
+- **Source register** field (bits [9:8] in 16-bit format)
+- **ALU sub-op dst** field (bits [7:6] in 16-bit ALU format)
+- **ALU sub-op src** field (bits [5:4] in 16-bit ALU format)
 
-### Instruction Word Format
+### 16-bit Instruction Word (General Format)
 
-```mermaid
-block-beta
-    columns 16
-    block:opcode:4
-        columns 4
-        O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
-    end
-    block:mode:2
-        columns 2
-        M1["bit 11"] M0["bit 10"]
-    end
-    block:size:2
-        columns 2
-        S1["bit 9"] S0["bit 8"]
-    end
-    block:dest:2
-        columns 2
-        D1["bit 7"] D0["bit 6"]
-    end
-    block:source:6
-        columns 6
-        SR5["bit 5"] SR4["bit 4"] SR3["bit 3"] SR2["bit 2"] SR1["bit 1"] SR0["bit 0"]
-    end
-```
+Used for: NOP, MOV reg-reg, PUSH/POP, RET, HLT.
 
 ```mermaid
 block-beta
@@ -298,35 +275,122 @@ block-beta
         columns 4
         O3["bit 15"] O2["bit 14"] O1["bit 13"] O0["bit 12"]
     end
-    block:mode:2
+    block:dst:2
         columns 2
-        M1["bit 11"] M0["bit 10"]
+        D1["bit 11"] D0["bit 10"]
     end
-    block:size:2
+    block:src:2
         columns 2
         S1["bit 9"] S0["bit 8"]
     end
-    block:dest:2
+    block:mode:2
         columns 2
-        D1["bit 7"] D0["bit 6"]
+        M1["bit 7"] M0["bit 6"]
     end
-    block:src_imm:6
+    block:unused:6
         columns 6
-        SI5["bit 5"] SI4["bit 4"] SI3["bit 3"] SI2["bit 2"] SI1["bit 1"] SI0["bit 0"]
+        U5["bit 5"] U4["bit 4"] U3["bit 3"] U2["bit 2"] U1["bit 1"] U0["bit 0"]
     end
 ```
+
+### 16-bit ALU Instruction Format
+
+Used for all arithmetic/logic operations (ADD, SUB, AND, OR, etc.).
 
 ```mermaid
 block-beta
     columns 16
-    block:extended:16
+    block:opcode:4
+        columns 4
+        A_O3["bit 15"] A_O2["bit 14"] A_O1["bit 13"] A_O0["bit 12"]
+    end
+    block:alu_op:4
+        columns 4
+        AL3["bit 11"] AL2["bit 10"] AL1["bit 9"] AL0["bit 8"]
+    end
+    block:alu_dst:2
+        columns 2
+        AD1["bit 7"] AD0["bit 6"]
+    end
+    block:alu_src:2
+        columns 2
+        AS1["bit 5"] AS0["bit 4"]
+    end
+    block:alu_unused:4
+        columns 4
+        AU3["bit 3"] AU2["bit 2"] AU1["bit 1"] AU0["bit 0"]
+    end
+```
+
+ALU sub-opcodes (4-bit field in bits 11:8):
+
+| Value | Mnemonic | Operation |
+|-------|----------|-----------|
+| 0x0 | ADD | dst = dst + src |
+| 0x1 | SUB | dst = dst - src |
+| 0x2 | CMP | Compare (flags only, no result) |
+| 0x3 | TEST | Bitwise AND (flags only, no result) |
+| 0x4 | AND | dst = dst AND src |
+| 0x5 | OR | dst = dst OR src |
+| 0x6 | XOR | dst = dst XOR src |
+| 0x7 | SHL | dst = dst << src |
+| 0x8 | SHR | dst = dst >> src |
+| 0x9 | INC | dst = dst + 1 |
+| 0xA | DEC | dst = dst - 1 |
+| 0xB | NOT | dst = NOT dst |
+| 0xC | NEG | dst = 0 - dst |
+| 0xD | MUL | dst = dst * src (planned) |
+| 0xE | DIV | dst = dst / src (planned) |
+
+### 32-bit Instruction Format
+
+Used for: MOV reg-imm, JMP imm, CALL imm, IN, OUT, CondJump.
+
+```mermaid
+block-beta
+    columns 16
+    block:opcode32:4
+        columns 4
+        E_O3["bit 31"] E_O2["bit 30"] E_O1["bit 29"] E_O0["bit 28"]
+    end
+    block:dst32:2
+        columns 2
+        E_D1["bit 27"] E_D0["bit 26"]
+    end
+    block:mode32:2
+        columns 2
+        E_M1["bit 25"] E_M0["bit 24"]
+    end
+    block:immediate:16
         columns 16
-        E15["bit 31"] E14["bit 30"] E13["bit 29"] E12["bit 28"]
-        E11["bit 27"] E10["bit 26"] E9["bit 25"] E8["bit 24"]
-        E7["bit 23"] E6["bit 22"] E5["bit 21"] E4["bit 20"]
-        E3["bit 19"] E2["bit 18"] E1["bit 17"] E0["bit 16"]
+        I15["bit 23"] I14["bit 22"] I13["bit 21"] I12["bit 20"]
+        I11["bit 19"] I10["bit 18"] I9["bit 17"] I8["bit 16"]
+        I7["bit 15"] I6["bit 14"] I5["bit 13"] I4["bit 12"]
+        I3["bit 11"] I2["bit 10"] I1["bit 9"] I0["bit 8"]
     end
 ```
+
+```mermaid
+block-beta
+    columns 16
+    block:unused32:8
+        columns 8
+        X7["bit 7"] X6["bit 6"] X5["bit 5"] X4["bit 4"] X3["bit 3"] X2["bit 2"] X1["bit 1"] X0["bit 0"]
+    end
+```
+
+The mode field (bits 25:24) MUST be `01` for 32-bit instructions — the CPU uses this value to detect 32-bit format during decode.
+
+Conditional jump sub-opcodes (CondJump, opcode 0xB):
+
+| Value | Mnemonic | Condition |
+|-------|----------|-----------|
+| 0x0 | JZ | Jump if Zero (Z=1) |
+| 0x1 | JNZ | Jump if Not Zero (Z=0) |
+| 0x2 | JC | Jump if Carry (C=1) |
+| 0x3 | JNC | Jump if Not Carry (C=0) |
+| 0x4 | JS | Jump if Sign (S=1) |
+| 0x5 | JNS | Jump if Not Sign (S=0) |
 
 ---
 
@@ -336,41 +400,29 @@ This table shows which instructions modify which registers:
 
 | Instruction | AX | BX | CX | DX | IP | SP | FLAGS |
 |-------------|:--:|:--:|:--:|:--:|:--:|:--:|:-----:|
+| `NOP` | — | — | — | — | ✓ | — | — |
 | `MOV dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
-| `ADD dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `SUB dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `CMP dest, src` | — | — | — | — | Auto | — | ✓ |
-| `TEST dest, src` | — | — | — | — | Auto | — | ✓ |
-| `ADC dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `SBB dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `AND dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `OR dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `XOR dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `SHL dest, count` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `SHR dest, count` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `INC dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `DEC dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `NOT dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
-| `NEG dest` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓ |
-| `XCHG dest, src` | ✓* | ✓* | ✓* | ✓* | Auto | — | — |
+| `ALU (any)` | ✓* | ✓* | ✓* | ✓* | Auto | — | ✓† |
 | `JMP addr` | — | — | — | — | ✓ | — | — |
-| `JZ addr` | — | — | — | — | ✓† | — | — |
-| `JNZ addr` | — | — | — | — | ✓† | — | — |
-| `JC addr` | — | — | — | — | ✓† | — | — |
-| `JNC addr` | — | — | — | — | ✓† | — | — |
-| `JS addr` | — | — | — | — | ✓† | — | — |
-| `JNS addr` | — | — | — | — | ✓† | — | — |
-| `IN dest, port` | ✓* | — | — | ✓ | Auto | — | — |
-| `OUT port, src` | — | — | — | ✓ | Auto | — | — |
-| `PUSH reg` | — | — | — | — | Auto | ✓ | — |
-| `POP reg` | ✓* | ✓* | ✓* | ✓* | Auto | ✓ | — |
 | `CALL addr` | — | — | — | — | ✓ | ✓ | — |
 | `RET` | — | — | — | — | ✓ | ✓ | — |
 | `INT n` | — | — | — | — | ✓ | ✓ | ✓ |
+| `IRET` | — | — | — | — | ✓ | ✓ | ✓ |
 | `HLT` | — | — | — | — | — | — | — |
+| `IN dest, port` | ✓* | — | — | — | Auto | — | — |
+| `OUT port, src` | — | — | — | — | Auto | — | — |
+| `JZ addr` | — | — | — | — | ✓‡ | — | — |
+| `JNZ addr` | — | — | — | — | ✓‡ | — | — |
+| `JC addr` | — | — | — | — | ✓‡ | — | — |
+| `JNC addr` | — | — | — | — | ✓‡ | — | — |
+| `JS addr` | — | — | — | — | ✓‡ | — | — |
+| `JNS addr` | — | — | — | — | ✓‡ | — | — |
+| `PUSH reg` | — | — | — | — | Auto | ✓ | — |
+| `POP reg` | ✓* | ✓* | ✓* | ✓* | Auto | ✓ | — |
 
 *\* If that register is the destination operand.*
-*† Only if the condition (Z flag) is met.*
+*† Sub-opcodes CMP and TEST only set flags (no register modified); NOT leaves flags unchanged.*
+*‡ Only if the condition is met.*
 
 ---
 
@@ -386,7 +438,7 @@ While the hardware does not enforce alignment, it is recommended to keep SP alig
 
 ### FLAGS Preservation
 
-The FLAGS register is only modified by ALU instructions (ADD, SUB, AND, OR, XOR, SHL, SHR). It is **not** modified by MOV, PUSH, POP, JMP, or I/O instructions. This allows conditional branches to test flags set by a previous arithmetic operation.
+The FLAGS register is only modified by ALU instructions (ADD, SUB, AND, OR, XOR, SHL, SHR, INC, DEC, CMP, TEST, NEG) and by INT/IRET (which push/pop flags). It is **not** modified by MOV, PUSH, POP, JMP, NOT, or I/O instructions. This allows conditional branches to test flags set by a previous arithmetic operation.
 
 ---
 
