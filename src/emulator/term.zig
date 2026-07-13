@@ -176,7 +176,7 @@ pub const Term = struct {
         old_termios: std.posix.termios,
 
         fn init() !PosixTerm {
-            const fd = std.io.getStdIn().handle;
+            const fd = std.posix.STDIN_FILENO;
             const old = try std.posix.tcgetattr(fd);
 
             var raw = old;
