@@ -466,3 +466,33 @@ test "firmware ends with HLT" {
     try std.testing.expectEqual(@as(u8, 0x00), fw[62]);
     try std.testing.expectEqual(@as(u8, 0x70), fw[63]);
 }
+
+test "firmware: first 4 words are NOP + MOV AX 0xFF + MOV BX 0xF" {
+    const fw = ISA.firmware;
+    try std.testing.expectEqual(@as(u16, 0x0000), std.mem.readInt(u16, fw[0..][0..2], .little));
+    try std.testing.expectEqual(@as(u16, 0xFF00), std.mem.readInt(u16, fw[2..][0..2], .little));
+    try std.testing.expectEqual(@as(u16, 0x1100), std.mem.readInt(u16, fw[4..][0..2], .little));
+    try std.testing.expectEqual(@as(u16, 0x0F00), std.mem.readInt(u16, fw[6..][0..2], .little));
+    try std.testing.expectEqual(@as(u16, 0x1500), std.mem.readInt(u16, fw[8..][0..2], .little));
+}
+
+test "firmware: contains ALU ADD instruction" {
+    const fw = ISA.firmware;
+    try std.testing.expect(std.mem.indexOf(u8, fw[0..], &.{ 0x10, 0xA0 }) != null);
+}
+
+test "firmware: contains PUSH/POP pair" {
+    const fw = ISA.firmware;
+    try std.testing.expect(std.mem.indexOf(u8, fw[0..], &.{ 0x00, 0xC0 }) != null);
+    try std.testing.expect(std.mem.indexOf(u8, fw[0..], &.{ 0x00, 0xC5 }) != null);
+}
+
+test "firmware: size is 1024 bytes" {
+    const fw = ISA.firmware;
+    try std.testing.expectEqual(@as(usize, 1024), fw.len);
+}
+
+test "firmware: contains HLT" {
+    const fw = ISA.firmware;
+    try std.testing.expect(std.mem.indexOf(u8, fw[0..], &.{ 0x00, 0x70 }) != null);
+}

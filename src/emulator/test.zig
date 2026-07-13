@@ -2426,6 +2426,285 @@ test "JNS not taken 16-bit" {
 }
 
 // =============================================================================
+// CondJump 16-bit — Comprehensive flag-based test (all 6 conditions)
+// =============================================================================
+
+test "CondJump 16-bit all conditions taken/not-taken" {
+    var cpu = CPU{};
+
+    // === JZ taken (Z=1 via SUB AX, AX) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SUB, .AX, .AX));
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, 0x0000);
+        writeInstruction(&cpu.memory, 6, condWord16(.JZ));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JZ not taken (Z=0 from reset) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, 0x0000);
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, 0x0000);
+        writeInstruction(&cpu.memory, 6, condWord16(.JZ));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+
+    // === JNZ taken (Z=0 via MOV 2 + ADD) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 2, 0x0002);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.ADD, .AX, .AX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JNZ));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JNZ not taken (Z=1 via SUB AX, AX; 3rd slot = SUB AX,BX to avoid hi_mode=01 bug) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SUB, .AX, .AX));
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.SUB, .AX, .BX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JNZ));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+
+    // === JC taken (C=1 via MOV 0xFFFF + ADD) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 2, 0xFFFF);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.ADD, .AX, .AX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JC));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JC not taken (C=0 from reset) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, 0x0000);
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, 0x0000);
+        writeInstruction(&cpu.memory, 6, condWord16(.JC));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+
+    // === JNC taken (C=0 from reset) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, 0x0000);
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, 0x0000);
+        writeInstruction(&cpu.memory, 6, condWord16(.JNC));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JNC not taken (C=1 via MOV+ADD) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 2, 0xFFFF);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.ADD, .AX, .AX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JNC));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+
+    // === JS taken (S=1 via MOV 0xFFFF + ADD → result=0xFFFE) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 2, 0xFFFF);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.ADD, .AX, .AX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JS));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JS not taken (S=0 from reset) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, 0x0000);
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, 0x0000);
+        writeInstruction(&cpu.memory, 6, condWord16(.JS));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+
+    // === JNS taken (S=0 from reset; 3rd slot = SUB AX,BX to avoid hi_mode=01 bug) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, 0x0000);
+        writeInstruction(&cpu.memory, 2, 0x0000);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.SUB, .AX, .BX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JNS));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.ax);
+    }
+
+    // === JNS not taken (S=1 via MOV+ADD) ===
+    {
+        cpu.reset();
+        writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 2, 0xFFFF);
+        writeInstruction(&cpu.memory, 4, ISA.encodeAlu(.ADD, .AX, .AX));
+        writeInstruction(&cpu.memory, 6, condWord16(.JNS));
+        writeInstruction(&cpu.memory, 8, 0x0010);
+        writeInstruction(&cpu.memory, 10, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 12, 0x0000);
+        writeInstruction(&cpu.memory, 14, 0x7000);
+        writeInstruction(&cpu.memory, 16, ISA.encode16(.MOV, .AX, .AX, .Imm));
+        writeInstruction(&cpu.memory, 18, 0xBBBB);
+        writeInstruction(&cpu.memory, 20, 0x7000);
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        _ = try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    }
+}
+
+// =============================================================================
 // PUSH/POP Additional Tests
 // =============================================================================
 
@@ -2668,6 +2947,224 @@ test "flushUartTx: CRLF sequence" {
     cpu.uart_tx_head = 4;
     cpu.flushUartTx();
     try std.testing.expectEqual(cpu.uart_tx_head, cpu.uart_tx_tail);
+}
+
+// =============================================================================
+// Additional Peripheral Edge Case Tests
+// =============================================================================
+
+test "Generic I/O port 0x05: write then read" {
+    var cpu = CPU{};
+    cpu.writePort(5, 0xABCD);
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.readPort(5));
+}
+
+test "Generic I/O port 0xFF: boundary" {
+    var cpu = CPU{};
+    cpu.writePort(0xFF, 0x1234);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.readPort(0xFF));
+}
+
+test "Timer: IN reads cycle_count" {
+    var cpu = CPU{};
+    try cpu.step();
+    try cpu.step();
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, @truncate(cpu.cycle_count & 0xFFFF)), cpu.readPort(0x01));
+}
+
+test "Timer: read via IN instruction" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .BX, 0x1234));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x0001));
+    try cpu.step();
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, @truncate(cpu.cycle_count & 0xFFFF)), cpu.ax);
+}
+
+test "Keyboard: OUT is no-op (no crash)" {
+    var cpu = CPU{};
+    cpu.writePort(2, 0xFFFF);
+    try std.testing.expectEqual(@as(u8, 0), cpu.kbd_head);
+    try std.testing.expectEqual(@as(u8, 0), cpu.kbd_tail);
+}
+
+test "VGA: multiple writes" {
+    var cpu = CPU{};
+    cpu.writePort(0x10, 'H');
+    cpu.writePort(0x10, 'e');
+    cpu.writePort(0x10, 'l');
+    cpu.writePort(0x10, 'l');
+    cpu.writePort(0x10, 'o');
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'H'), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'e'), cpu.vga_buffer[1]);
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'l'), cpu.vga_buffer[2]);
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'l'), cpu.vga_buffer[3]);
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'o'), cpu.vga_buffer[4]);
+}
+
+test "VGA: control clear then write" {
+    var cpu = CPU{};
+    cpu.writePort(0x11, 0x0001);
+    cpu.writePort(0x10, 'A');
+    try std.testing.expectEqual(@as(u16, 0x0700 | 'A'), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[1]);
+}
+
+test "Port 0x03: clear-on-read" {
+    var cpu = CPU{};
+    cpu.cmd_id = 5;
+    try std.testing.expectEqual(@as(u16, 5), cpu.readPort(0x03));
+    try std.testing.expectEqual(@as(u16, 0), cpu.readPort(0x03));
+}
+
+test "Port 0x04: read line buffer bytes sequentially" {
+    var cpu = CPU{};
+    cpu.line_buf[0..5].* = .{ 'H', 'e', 'l', 'l', 'o' };
+    cpu.line_len = 5;
+    try std.testing.expectEqual(@as(u16, 'H'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 'e'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 'l'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 'l'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 'o'), cpu.readPort(0x04));
+    try std.testing.expectEqual(@as(u16, 0), cpu.readPort(0x04));
+}
+
+// =============================================================================
+// ALU All Ops Roundtrip
+// =============================================================================
+
+test "ALU all ops roundtrip" {
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADD, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x1243), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getCarry());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SUB, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x1225), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getCarry());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.CMP, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getCarry());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.TEST, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.AND, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0004), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.OR, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x123F), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        cpu.bx = 0x000F;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XOR, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x123B), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x8000;
+        cpu.bx = 0x0001;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHL, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+        try std.testing.expect(cpu.getZero());
+        try std.testing.expect(cpu.getCarry());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x0001;
+        cpu.bx = 0x0001;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHR, .AX, .BX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+        try std.testing.expect(cpu.getZero());
+        try std.testing.expect(cpu.getCarry());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0xFFFF;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.INC, .AX, .AX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+        try std.testing.expect(cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x0001;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.DEC, .AX, .AX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+        try std.testing.expect(cpu.getZero());
+        try std.testing.expectEqual(false, cpu.getSign());
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x1234;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.NOT, .AX, .AX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xEDCB), cpu.ax);
+    }
+    {
+        var cpu = CPU{};
+        cpu.ax = 0x0001;
+        writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.NEG, .AX, .AX));
+        try cpu.step();
+        try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
+        try std.testing.expectEqual(false, cpu.getZero());
+        try std.testing.expect(cpu.getCarry());
+        try std.testing.expect(cpu.getSign());
+    }
 }
 
 
