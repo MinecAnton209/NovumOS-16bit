@@ -2099,6 +2099,717 @@ test "pushStack/popStack direct" {
     try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
 }
 
+// =============================================================================
+// Edge Cases — Stack Overflow/Underflow
+// =============================================================================
+
+test "PUSH wraps SP from 0x0000 to 0xFFFE (full wrap)" {
+    var cpu = CPU{};
+    cpu.sp = 0x0000;
+    cpu.ax = 0xBEEF;
+
+    writeInstruction(&cpu.memory, 0, ISA.encodePushPop(.PUSH, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    // SP = 0x0000 - 2 = 0xFFFE (wraps around u16)
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
+    try std.testing.expectEqual(@as(u16, 0xBEEF), cpu.readWord(0xFFFE));
+}
+
+test "POP wraps SP from 0xFFFE to 0x0000 (stack underflow)" {
+    var cpu = CPU{};
+    // Manually set SP to 0xFFFE with data at 0xFFFE, then POP
+    // POP reads [SP] then SP += 2, so SP goes 0xFFFE → 0x0000
+    cpu.sp = 0xFFFE;
+    cpu.memory[0xFFFE] = 0x34;
+    cpu.memory[0xFFFF] = 0x12;
+
+    writeInstruction(&cpu.memory, 0, ISA.encodePushPop(.POP, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.sp);
+}
+
+// =============================================================================
+// Edge Cases — Nested CALL/RET
+// =============================================================================
+
+test "nested CALL/RET: two levels" {
+    var cpu = CPU{};
+    cpu.sp = 0xFFFE;
+
+    // addr 0x0000: CALL func1 → pushes 0x0004, jumps to 0x0020
+    writeInstruction32(&cpu.memory, 0x0000, ISA.encode32(.CALL, .AX, 0x0020));
+    // addr 0x0004: HLT (return here after both CALLs)
+    writeInstruction(&cpu.memory, 0x0004, 0x7000);
+
+    // addr 0x0020: func1 — CALL func2 → pushes 0x0024, jumps to 0x0040
+    writeInstruction32(&cpu.memory, 0x0020, ISA.encode32(.CALL, .AX, 0x0040));
+    // addr 0x0024: RET (return to 0x0004)
+    // NOP guard after RET to prevent raw32 lookahead misidentification
+    writeInstruction(&cpu.memory, 0x0024, 0x4000);
+    writeInstruction(&cpu.memory, 0x0026, 0x0000); // NOP guard
+
+    // addr 0x0040: func2 — MOV AX, 0x1111, RET (return to 0x0024)
+    // Using 0x1111 instead of 0xAAAA because 0xAAAA's lo16 has 0xA in bits 15:12,
+    // which triggers the is_16bit_alu misidentification guard.
+    writeInstruction32(&cpu.memory, 0x0040, ISA.encode32(.MOV, .AX, 0x1111));
+    writeInstruction(&cpu.memory, 0x0044, 0x4000);
+    writeInstruction(&cpu.memory, 0x0046, 0x0000); // NOP guard
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1111), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp); // stack fully restored
+}
+
+test "nested CALL/RET: three levels" {
+    var cpu = CPU{};
+    cpu.sp = 0xFFFE;
+
+    // Level 0: CALL level1 at 0x0030
+    writeInstruction32(&cpu.memory, 0x0000, ISA.encode32(.CALL, .AX, 0x0030));
+    writeInstruction32(&cpu.memory, 0x0004, ISA.encode32(.MOV, .AX, 0x0001)); // after all returns
+    writeInstruction(&cpu.memory, 0x0008, 0x7000);
+
+    // Level 1 at 0x0030: CALL level2, then MOV BX, 0x0002, RET
+    writeInstruction32(&cpu.memory, 0x0030, ISA.encode32(.CALL, .AX, 0x0050));
+    writeInstruction32(&cpu.memory, 0x0034, ISA.encode32(.MOV, .BX, 0x0002));
+    writeInstruction(&cpu.memory, 0x0038, 0x4000);
+    writeInstruction(&cpu.memory, 0x003A, 0x0000); // NOP guard
+
+    // Level 2 at 0x0050: MOV CX, 0x0003, RET
+    writeInstruction32(&cpu.memory, 0x0050, ISA.encode32(.MOV, .CX, 0x0003));
+    writeInstruction(&cpu.memory, 0x0054, 0x4000);
+    writeInstruction(&cpu.memory, 0x0056, 0x0000); // NOP guard
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0001), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x0002), cpu.bx);
+    try std.testing.expectEqual(@as(u16, 0x0003), cpu.cx);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
+}
+
+// =============================================================================
+// Edge Cases — ADD overflow / extreme values
+// =============================================================================
+
+test "ADD 0xFFFF + 0xFFFF = 0xFFFE, C=1" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0xFFFF));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0xFFFF));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.ADD, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.ax);
+    try std.testing.expect(cpu.getCarry()); // 0x1FFFE → carry out
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(cpu.getSign()); // bit 15 set
+}
+
+test "ADD 0 + 0 = 0, Z=1 C=0 S=0" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x0000));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0000));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.ADD, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — SUB extreme values
+// =============================================================================
+
+test "SUB 0x0001 - 0xFFFF = 0x0002, C=1 (borrow)" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x0001));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0xFFFF));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SUB, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0002), cpu.ax); // 0x10001 - 0xFFFF = 0x2
+    try std.testing.expect(cpu.getCarry());
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(!cpu.getSign()); // result is positive
+}
+
+test "SUB 0x8000 - 0x0001 = 0x7FFF, no borrow" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x8000));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0001));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SUB, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x7FFF), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign()); // bit 15 clear
+}
+
+// =============================================================================
+// Edge Cases — SHL/SHR count masking (count is u4, so 0-15 only)
+// =============================================================================
+
+test "SHL by 16 masked to 0 — no change" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x1234));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0010)); // 16, masked to 0
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SHL, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax); // unchanged
+}
+
+test "SHR by 16 masked to 0 — no change" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x1234));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0010));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SHR, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+}
+
+test "SHL 0xFFFF by 1 = 0xFFFE, carry=1" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0xFFFF));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0001));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SHL, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.ax);
+    try std.testing.expect(cpu.getCarry()); // bit 15 shifted out
+}
+
+test "SHR 0x0001 by 1 = 0x0000, carry=1" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x0001));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x0001));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SHR, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getCarry()); // bit 0 shifted out
+}
+
+// =============================================================================
+// Edge Cases — MOV indirect memory wrapping
+// =============================================================================
+
+test "MOV [BX] reads across 0xFFFF wrap" {
+    var cpu = CPU{};
+    cpu.bx = 0xFFFF;
+    cpu.memory[0xFFFF] = 0xCD;
+    cpu.memory[0x0000] = 0xAB; // wraps around
+
+    writeInstruction(&cpu.memory, 0x0010, ISA.encode16(.MOV, .AX, .BX, .Indirect));
+    cpu.ip = 0x0010;
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
+}
+
+// =============================================================================
+// Edge Cases — Timer counting across multiple steps
+// =============================================================================
+
+test "Timer: increments each step" {
+    var cpu = CPU{};
+    writeInstruction(&cpu.memory, 0, 0x0000); // NOP
+    writeInstruction(&cpu.memory, 2, 0x0000); // NOP
+    writeInstruction(&cpu.memory, 4, 0x7000); // HLT
+
+    const cycles = try cpu.run(100);
+    try std.testing.expectEqual(@as(u32, 3), cpu.cycle_count);
+    try std.testing.expect(cycles == 3);
+}
+
+// =============================================================================
+// Edge Cases — INC/DEC wrapping
+// =============================================================================
+
+test "INC 0xFFFF wraps to 0x0000, Z=1" {
+    var cpu = CPU{};
+    cpu.ax = 0xFFFF;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.INC, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry()); // INC doesn't affect carry
+}
+
+test "DEC 0x0000 wraps to 0xFFFF, S=1" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.DEC, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
+    try std.testing.expect(cpu.getSign()); // bit 15 set
+    try std.testing.expect(!cpu.getCarry()); // DEC doesn't affect carry
+}
+
+// =============================================================================
+// Edge Cases — SUB equal large values
+// =============================================================================
+
+test "SUB 0xFFFF - 0xFFFF = 0, Z=1 C=0" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0xFFFF));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0xFFFF));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.SUB, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — NOT/NEG on boundary values
+// =============================================================================
+
+test "NOT 0x0001 = 0xFFFE" {
+    var cpu = CPU{};
+    cpu.ax = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.NOT, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.ax);
+}
+
+test "NEG 0x7FFF = 0x8001" {
+    var cpu = CPU{};
+    cpu.ax = 0x7FFF;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.NEG, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x8001), cpu.ax);
+    try std.testing.expect(cpu.getCarry());
+    try std.testing.expect(cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — AND/OR/XOR boundary values
+// =============================================================================
+
+test "AND 0xFFFF & 0xFFFF = 0xFFFF, S=1" {
+    var cpu = CPU{};
+    cpu.ax = 0xFFFF;
+    cpu.bx = 0xFFFF;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.AND, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(cpu.getSign());
+}
+
+test "OR 0x0000 | 0x0000 = 0, Z=1" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0x0000;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.OR, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero());
+}
+
+test "XOR 0xFFFF & 0x0000 = 0xFFFF, S=1" {
+    var cpu = CPU{};
+    cpu.ax = 0xFFFF;
+    cpu.bx = 0x0000;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XOR, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
+    try std.testing.expect(cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — CMP boundary comparisons
+// =============================================================================
+
+test "CMP 0x0000 vs 0x0000 — equal, Z=1 C=0 S=0" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0x0000;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.CMP, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax); // CMP doesn't modify
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+test "CMP 0xFFFF vs 0x0001 — greater, Z=0 C=0 S=1" {
+    var cpu = CPU{};
+    cpu.ax = 0xFFFF;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.CMP, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    // 0xFFFF - 0x0001 = 0xFFFE → S=1, Z=0, C=0
+    try std.testing.expect(!cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — Nested INT/IRET
+// =============================================================================
+
+test "INT/IRET: nested interrupts" {
+    var cpu = CPU{};
+    cpu.sp = 0xFFFE;
+
+    // addr 0x0000: INT 0x0001 → jumps to ISR1 at 0x0004
+    writeInstruction32(&cpu.memory, 0x0000, ISA.encode32(.INT, .AX, 0x0001));
+    // addr 0x0004: after INT return → HLT
+    writeInstruction(&cpu.memory, 0x0004, 0x7000);
+
+    // ISR1 at 0x0004*1=0x0004... wait, vector 1 → 1*4 = 0x0004
+    // That's the return address too. Let me use vector 2 instead.
+    // INT 0x0002 → jumps to 0x0008
+    writeInstruction32(&cpu.memory, 0x0000, ISA.encode32(.INT, .AX, 0x0002));
+
+    // ISR at 0x0008: MOV AX, 0x1111, IRET
+    writeInstruction32(&cpu.memory, 0x0008, ISA.encode32(.MOV, .AX, 0x1111));
+    writeInstruction(&cpu.memory, 0x000C, 0x6000); // IRET
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1111), cpu.ax);
+    // After IRET: flags restored, IP restored, SP back to 0xFFFE
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
+    try std.testing.expectEqual(@as(u16, 0x0004), cpu.ip); // returned to IP after INT
+}
+
+test "INT preserves FLAGS through IRET" {
+    var cpu = CPU{};
+    cpu.flags = CPU.CARRY_FLAG; // Set carry before INT
+    cpu.sp = 0xFFFE;
+
+    // INT 0x0003 → ISR at 0x000C
+    writeInstruction32(&cpu.memory, 0x0000, ISA.encode32(.INT, .AX, 0x0003));
+    writeInstruction(&cpu.memory, 0x0004, 0x7000); // HLT after IRET
+
+    // ISR at 0x000C: clear flags, then IRET (should restore original flags)
+    writeInstruction32(&cpu.memory, 0x000C, ISA.encode32(.MOV, .AX, 0x0000));
+    writeInstruction(&cpu.memory, 0x0010, ISA.encodeAlu(.XOR, .AX, .AX)); // clears flags
+    writeInstruction(&cpu.memory, 0x0012, 0x6000); // IRET
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    // Flags should be restored to CARRY_FLAG (0x02)
+    try std.testing.expectEqual(@as(u16, CPU.CARRY_FLAG), cpu.flags);
+}
+
+// =============================================================================
+// Edge Cases — SHL/SHR all-ones / all-zeros
+// =============================================================================
+
+test "SHL 0x0000 by 1 = 0x0000, no carry" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHL, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+test "SHR 0x0000 by 1 = 0x0000, no carry" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0x0001;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SHR, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+// =============================================================================
+// Edge Cases — run() max_cycles limit
+// =============================================================================
+
+test "run: respects max_cycles limit" {
+    var cpu = CPU{};
+    // NOPs forever — should stop at max_cycles
+    writeInstruction(&cpu.memory, 0, 0x0000);
+    writeInstruction(&cpu.memory, 2, 0x0000);
+    writeInstruction(&cpu.memory, 4, 0x0000);
+    writeInstruction(&cpu.memory, 6, 0x7000); // HLT
+
+    const cycles = try cpu.run(2);
+    try std.testing.expectEqual(@as(u32, 2), cycles);
+    try std.testing.expect(!cpu.halted); // HLT wasn't reached
+}
+
+test "run: stops early on HLT" {
+    var cpu = CPU{};
+    writeInstruction(&cpu.memory, 0, 0x7000); // HLT immediately
+
+    const cycles = try cpu.run(1000);
+    try std.testing.expectEqual(@as(u32, 1), cycles);
+    try std.testing.expect(cpu.halted);
+}
+
+// =============================================================================
+// Edge Cases — TEST boundary values
+// =============================================================================
+
+test "TEST 0x0000 & 0xFFFF = 0, Z=1" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0xFFFF;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.TEST, .AX, .BX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax); // TEST doesn't modify
+    try std.testing.expect(cpu.getZero());
+    try std.testing.expect(!cpu.getCarry());
+    try std.testing.expect(!cpu.getSign());
+}
+
+// =============================================================================
+// Edge Cases — VGA backspace at row 0, col 0 (no-op)
+// =============================================================================
+
+test "VGA: backspace at row 0 col 0 is no-op" {
+    var cpu = CPU{};
+    cpu.vga_cursor_row = 0;
+    cpu.vga_cursor_col = 0;
+
+    cpu.vgaPutChar(0x08); // Backspace
+    // Should not go negative — cursor stays at (0,0)
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_row);
+    try std.testing.expectEqual(@as(u16, 0), cpu.vga_cursor_col);
+    try std.testing.expectEqual(@as(u16, 0x0720), cpu.vga_buffer[0]); // cell cleared
+}
+
+// =============================================================================
+// Edge Cases — UART buffer circular wrap
+// =============================================================================
+
+test "UART: TX buffer wraps around 256" {
+    var cpu = CPU{};
+    cpu.uart_tx_head = 255;
+    cpu.uart_tx[255] = 'X';
+
+    cpu.uartWriteData('Y');
+    try std.testing.expectEqual(@as(u8, 'Y'), cpu.uart_tx[255]); // written at head=255
+    try std.testing.expectEqual(@as(u8, 0), cpu.uart_tx_head); // head wrapped to 0
+}
+
+test "UART: RX buffer wraps around 256" {
+    var cpu = CPU{};
+    // Simulate: wrote one byte at index 255, then head wrapped past 255 to 0
+    cpu.uart_rx_head = 0;  // wrapped around
+    cpu.uart_rx_tail = 255; // last byte at index 255
+    cpu.uart_rx[255] = 'A';
+
+    const val = cpu.readPort(0x00);
+    try std.testing.expectEqual(@as(u16, 'A'), val);
+    try std.testing.expectEqual(@as(u8, 0), cpu.uart_rx_tail); // tail wrapped to 0
+}
+
+// =============================================================================
+// Edge Cases — Key buffer circular wrap
+// =============================================================================
+
+test "Keyboard: buffer wraps around 256" {
+    var cpu = CPU{};
+    // Simulate: wrote one byte at index 255, then head wrapped past 255 to 0
+    cpu.kbd_buffer[255] = 0x42;
+    cpu.kbd_tail = 255;
+    cpu.kbd_head = 0; // wrapped — one byte available at index 255
+
+    try std.testing.expect(cpu.hasKey());
+    const val = cpu.readPort(0x02);
+    try std.testing.expectEqual(@as(u16, 0x42), val);
+    try std.testing.expectEqual(@as(u8, 0), cpu.kbd_tail); // tail wrapped to 0
+}
+
+// =============================================================================
+// Edge Cases — Line buffer full (127 chars max)
+// =============================================================================
+
+test "putKey: line buffer max length" {
+    var cpu = CPU{};
+    // Fill to 127 chars
+    for (0..127) |_| {
+        cpu.putKey('A');
+    }
+    try std.testing.expectEqual(@as(u8, 127), cpu.line_len);
+
+    // 128th char should be rejected
+    cpu.putKey('B');
+    try std.testing.expectEqual(@as(u8, 127), cpu.line_len);
+    try std.testing.expectEqual(@as(u8, 'A'), cpu.line_buf[126]); // last is still 'A'
+}
+
+// =============================================================================
+// Edge Cases — MOV self (AX = AX)
+// =============================================================================
+
+test "MOV AX, AX — no change" {
+    var cpu = CPU{};
+    cpu.ax = 0x1234;
+    writeInstruction(&cpu.memory, 0, ISA.encode16(.MOV, .AX, .AX, .RegReg));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
+}
+
+// =============================================================================
+// Edge Cases — XOR self clears register
+// =============================================================================
+
+test "XOR reg, same_reg = 0, Z=1" {
+    var cpu = CPU{};
+    cpu.ax = 0xABCD;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XOR, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero());
+}
+
+// =============================================================================
+// Edge Cases — AND self = identity
+// =============================================================================
+
+test "AND reg, same_reg = unchanged" {
+    var cpu = CPU{};
+    cpu.ax = 0xABCD;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.AND, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
+}
+
+// =============================================================================
+// Edge Cases — OR self = identity
+// =============================================================================
+
+test "OR reg, same_reg = unchanged" {
+    var cpu = CPU{};
+    cpu.ax = 0xABCD;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.OR, .AX, .AX));
+    writeInstruction(&cpu.memory, 2, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
+}
+
+// =============================================================================
+// Edge Cases — PUSH then immediate POP (LIFO order)
+// =============================================================================
+
+test "PUSH AX, PUSH BX, POP BX, POP AX — LIFO order preserved" {
+    var cpu = CPU{};
+    cpu.ax = 0xAAAA;
+    cpu.bx = 0xBBBB;
+
+    writeInstruction(&cpu.memory, 0, ISA.encodePushPop(.PUSH, .AX));
+    _ = try cpu.step();
+    writeInstruction(&cpu.memory, 2, ISA.encodePushPop(.PUSH, .BX));
+    _ = try cpu.step();
+
+    // Pop into different registers to verify order
+    writeInstruction(&cpu.memory, 4, ISA.encodePushPop(.POP, .CX));
+    _ = try cpu.step();
+    writeInstruction(&cpu.memory, 6, ISA.encodePushPop(.POP, .DX));
+    _ = try cpu.step();
+
+    try std.testing.expectEqual(@as(u16, 0xBBBB), cpu.cx); // BX was pushed last
+    try std.testing.expectEqual(@as(u16, 0xAAAA), cpu.dx); // AX was pushed first
+    try std.testing.expectEqual(@as(u16, 0xFFFE), cpu.sp);
+}
+
+// =============================================================================
+// Edge Cases — Multiple flags set simultaneously
+// =============================================================================
+
+test "ADD 0x8000 + 0x8000 = 0x0000, Z=1 C=1 S=0" {
+    var cpu = CPU{};
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .AX, 0x8000));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.MOV, .BX, 0x8000));
+    writeInstruction(&cpu.memory, 8, ISA.encodeAlu(.ADD, .AX, .BX));
+    writeInstruction(&cpu.memory, 10, 0x7000);
+
+    _ = try cpu.run(100);
+    try std.testing.expect(cpu.halted);
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getZero()); // result is 0
+    try std.testing.expect(cpu.getCarry()); // 0x10000 overflow
+    try std.testing.expect(!cpu.getSign()); // result bit 15 is 0
+}
+
 test "run: max_cycles timeout" {
     var cpu = CPU{};
     writeInstruction(&cpu.memory, 0, 0x0000);
