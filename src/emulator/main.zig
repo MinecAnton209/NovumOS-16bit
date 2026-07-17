@@ -178,9 +178,10 @@ fn interactiveMode(cpu: *CPU, firmware: []const u8) !void {
             try cpu.step();
             cpu.cycle_count += 1;
 
-            // Check for new input every ~50 instructions so that
-            // Enter is picked up promptly and not delayed by the batch.
+            // Flush pending UART TX output and check for new input
+            // every ~50 instructions so output appears promptly.
             if (batch % 50 == 0) {
+                cpu.flushUartTx();
                 if (term.readKey()) |key| {
                     key_count += 1;
                     if (key.ctrl and (key.ascii == 0x03 or key.ascii == 0x1A)) {
