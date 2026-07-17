@@ -38,7 +38,7 @@ pub const Disassembler = struct {
             .ADD => "ADD", .SUB => "SUB", .CMP => "CMP", .TEST => "TEST",
             .AND => "AND", .OR => "OR", .XOR => "XOR", .SHL => "SHL",
             .SHR => "SHR", .INC => "INC", .DEC => "DEC", .NOT => "NOT",
-            .NEG => "NEG", .MUL => "MUL", .DIV => "DIV",
+            .NEG => "NEG",
         };
     }
 

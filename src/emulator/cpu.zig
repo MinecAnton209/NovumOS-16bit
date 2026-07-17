@@ -949,8 +949,6 @@ pub const CPU = struct {
     ///   DEC  — dst = dst - 1
     ///   NOT  — dst = NOT dst (bitwise complement)
     ///   NEG  — dst = 0 - dst (two's complement negate)
-    ///   MUL  — dst = dst * src (signed multiply) — planned
-    ///   DIV  — dst = dst / src (signed divide) — planned
     fn executeAlu(self: *CPU, alu_op: ISA.AluOp, dst: ISA.Register, src: ISA.Register) void {
         const a = self.getReg(dst);
         const b = self.getReg(src);
@@ -1043,14 +1041,6 @@ pub const CPU = struct {
                 self.setReg(dst, result);
                 self.setCarry(result != 0);
                 self.updateFlags(result);
-            },
-            .MUL => {
-                // Signed multiply — not yet implemented
-                @panic("MUL not implemented");
-            },
-            .DIV => {
-                // Signed divide — not yet implemented
-                @panic("DIV not implemented");
             },
         }
     }

@@ -64,8 +64,6 @@ pub const AluOp = enum(u4) {
     DEC = 0b1010,    // dst = dst - 1 (decrement)
     NOT = 0b1011,    // dst = NOT dst (bitwise complement)
     NEG = 0b1100,    // dst = 0 - dst (two's complement negate)
-    MUL = 0b1101,    // dst = dst * src (multiply signed) — planned
-    DIV = 0b1110,    // dst = dst / src (divide signed) — planned
 };
 
 /// Conditional jump sub-opcodes — encoded in bits 11:8.

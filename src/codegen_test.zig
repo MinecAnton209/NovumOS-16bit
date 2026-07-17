@@ -227,20 +227,6 @@ test "encodeAlu NEG DX" {
     try std.testing.expectEqual(@as(u16, 0xACF0), inst);
 }
 
-test "encodeAlu MUL AX, BX" {
-    const inst = encodeAlu(.MUL, .AX, .BX);
-    // ALU=0xA, MUL=13, dst=AX(0), src=BX(1)
-    // 1010 1101 00 01 0000 = 0xAD10
-    try std.testing.expectEqual(@as(u16, 0xAD10), inst);
-}
-
-test "encodeAlu DIV AX, BX" {
-    const inst = encodeAlu(.DIV, .AX, .BX);
-    // ALU=0xA, DIV=14, dst=AX(0), src=BX(1)
-    // 1010 1110 00 01 0000 = 0xAE10
-    try std.testing.expectEqual(@as(u16, 0xAE10), inst);
-}
-
 test "encodeAlu bit positions" {
     // ADD CX, DX: opcode=1010, alu_op=0000, dst=10, src=11
     const inst = encodeAlu(.ADD, .CX, .DX);
