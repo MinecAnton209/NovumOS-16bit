@@ -16,19 +16,25 @@ const { rewrite: rewriteSuffix } = rewritePath(
 );
 
 export default function proxy(request: NextRequest) {
-  // Step 1: i18n — detect and redirect to language prefix
+  const { pathname } = request.nextUrl;
+
+  // Skip API, static, and asset routes
+  if (pathname.match(/^\/(api|_next\/static|_next\/image|favicon\.ico|og)/)) {
+    return NextResponse.next();
+  }
+
+  // i18n — redirect to language prefix if missing
   const i18nResult = i18nHandler(request);
   if (i18nResult) return i18nResult;
 
-  // Step 2: Content markdown rewrites
-  const result = rewriteSuffix(request.nextUrl.pathname);
+  // Content markdown rewrites
+  const result = rewriteSuffix(pathname);
   if (result) {
     return NextResponse.rewrite(new URL(result, request.nextUrl));
   }
 
   if (isMarkdownPreferred(request)) {
-    const result = rewriteDocs(request.nextUrl.pathname);
-
+    const result = rewriteDocs(pathname);
     if (result) {
       return NextResponse.rewrite(new URL(result, request.nextUrl));
     }
@@ -38,5 +44,5 @@ export default function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|og).*)'],
+  matcher: ['/:path*'],
 };
