@@ -1,10 +1,10 @@
-import { defineConfig, defineDocs } from 'fumadocs-mdx/config';
+import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
+import { z } from 'zod';
 
-// You can customize Zod schemas for frontmatter and `meta.json` here
-// see https://fumadocs.dev/docs/mdx/collections
-export const docs = defineDocs({
-  dir: 'content/docs',
+// English documentation
+export const enDocs = defineDocs({
+  dir: 'content/docs/en',
   docs: {
     schema: pageSchema,
     postprocess: {
@@ -14,6 +14,30 @@ export const docs = defineDocs({
   meta: {
     schema: metaSchema,
   },
+});
+
+// Russian documentation
+export const ruDocs = defineDocs({
+  dir: 'content/docs/ru',
+  docs: {
+    schema: pageSchema,
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
+  meta: {
+    schema: metaSchema,
+  },
+});
+
+// Blog posts
+export const blogPosts = defineCollections({
+  type: 'doc',
+  dir: 'content/blog',
+  schema: pageSchema.extend({
+    author: z.string(),
+    date: z.string().date().or(z.date()),
+  }),
 });
 
 export default defineConfig({

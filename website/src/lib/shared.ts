@@ -1,11 +1,11 @@
-export const appName = 'My App';
+export const appName = 'NovumOS-16bit';
+export const appDescription = '16-bit operating system written in Zig for a custom TTL-based CPU';
 export const docsRoute = '/docs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 
-// fill this with your actual GitHub info, for example:
 export const gitConfig = {
-  user: 'fuma-nama',
-  repo: 'fumadocs',
+  user: 'MinecAnton209',
+  repo: 'NovumOS-16bit',
   branch: 'main',
 };

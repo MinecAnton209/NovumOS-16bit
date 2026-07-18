@@ -1,4 +1,4 @@
-import { getPageImage, getPageMarkdownUrl, source } from '@/lib/source';
+import { getSource } from '@/lib/source';
 import {
   DocsBody,
   DocsDescription,
@@ -12,10 +12,16 @@ import { getMDXComponents } from '@/components/mdx';
 import type { Metadata } from 'next';
 import { createRelativeLink } from 'fumadocs-ui/mdx';
 import { gitConfig } from '@/lib/shared';
+import { getPageImage, getPageMarkdownUrl } from '@/lib/source';
 
-export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
-  const params = await props.params;
-  const page = source.getPage(params.slug);
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ lang: string; slug?: string[] }>;
+}) {
+  const { lang, slug } = await params;
+  const source = getSource(lang);
+  const page = source.getPage(slug);
   if (!page) notFound();
 
   const MDX = page.data.body;
@@ -29,13 +35,12 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover
           markdownUrl={markdownUrl}
-          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${page.path}`}
+          githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${lang}/${page.path}`}
         />
       </div>
       <DocsBody>
         <MDX
           components={getMDXComponents({
-            // this allows you to link to other pages with relative file paths
             a: createRelativeLink(source, page),
           })}
         />
@@ -45,12 +50,23 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
 }
 
 export async function generateStaticParams() {
-  return source.generateParams();
+  const enSource = getSource('en');
+  const ruSource = getSource('ru');
+
+  return [
+    ...enSource.generateParams().map((p: any) => ({ lang: 'en', ...p })),
+    ...ruSource.generateParams().map((p: any) => ({ lang: 'ru', ...p })),
+  ];
 }
 
-export async function generateMetadata(props: PageProps<'/docs/[[...slug]]'>): Promise<Metadata> {
-  const params = await props.params;
-  const page = source.getPage(params.slug);
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ lang: string; slug?: string[] }>;
+}): Promise<Metadata> {
+  const { lang, slug } = await params;
+  const source = getSource(lang);
+  const page = source.getPage(slug);
   if (!page) notFound();
 
   return {
