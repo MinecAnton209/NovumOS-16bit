@@ -1,6 +1,7 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import { i18nProvider } from 'fumadocs-ui/i18n';
 import { i18n } from '@/lib/i18n';
+import { ThemeInit } from '@/components/theme';
 
 export default async function LangLayout({
   params,
@@ -17,7 +18,11 @@ export default async function LangLayout({
   });
 
   return (
-    <RootProvider i18n={i18nProvider(translations, lang)}>
+    <RootProvider
+      i18n={i18nProvider(translations, lang)}
+      theme={{ enabled: false }}
+    >
+      <ThemeInit />
       {children}
     </RootProvider>
   );
