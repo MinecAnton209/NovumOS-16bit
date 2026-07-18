@@ -10,7 +10,7 @@ export default async function Page({
 }: {
   params: Promise<{ lang: string; slug: string }>;
 }) {
-  const { slug } = await params;
+  const { lang, slug } = await params;
   const page = blog.getPage([slug]);
 
   if (!page) notFound();
@@ -23,7 +23,7 @@ export default async function Page({
         {page.data.description && (
           <p className="mb-4 text-fd-muted-foreground">{page.data.description}</p>
         )}
-        <Link href="/blog" className="text-sm text-fd-muted-foreground hover:text-fd-accent-foreground">
+        <Link href={`/${lang}/blog`} className="text-sm text-fd-muted-foreground hover:text-fd-accent-foreground">
           ← Back to blog
         </Link>
       </div>
@@ -58,10 +58,13 @@ export default async function Page({
 }
 
 export function generateStaticParams(): { lang: string; slug: string }[] {
-  return blog.getPages().map((page) => ({
-    lang: 'en',
-    slug: page.slugs[0],
-  }));
+  const languages = ['en', 'ru'];
+  return blog.getPages().flatMap((page) =>
+    languages.map((lang) => ({
+      lang,
+      slug: page.slugs[0],
+    })),
+  );
 }
 
 export async function generateMetadata({

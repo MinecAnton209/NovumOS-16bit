@@ -1,4 +1,4 @@
-import { getSource } from '@/lib/source';
+import { source } from '@/lib/source';
 import {
   DocsBody,
   DocsDescription,
@@ -20,8 +20,7 @@ export default async function Page({
   params: Promise<{ lang: string; slug?: string[] }>;
 }) {
   const { lang, slug } = await params;
-  const source = getSource(lang);
-  const page = source.getPage(slug);
+  const page = source.getPage(slug, lang);
   if (!page) notFound();
 
   const MDX = page.data.body;
@@ -50,13 +49,10 @@ export default async function Page({
 }
 
 export async function generateStaticParams() {
-  const enSource = getSource('en');
-  const ruSource = getSource('ru');
-
-  return [
-    ...enSource.generateParams().map((p: any) => ({ lang: 'en', ...p })),
-    ...ruSource.generateParams().map((p: any) => ({ lang: 'ru', ...p })),
-  ];
+  return source.getPages().map((p: any) => ({
+    lang: p.locale,
+    slug: p.slugs,
+  }));
 }
 
 export async function generateMetadata({
@@ -65,8 +61,7 @@ export async function generateMetadata({
   params: Promise<{ lang: string; slug?: string[] }>;
 }): Promise<Metadata> {
   const { lang, slug } = await params;
-  const source = getSource(lang);
-  const page = source.getPage(slug);
+  const page = source.getPage(slug, lang);
   if (!page) notFound();
 
   return {

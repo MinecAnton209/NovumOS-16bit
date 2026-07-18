@@ -29,7 +29,7 @@ export default function BlogPage() {
             )}
             <div className="flex gap-4 text-sm text-fd-muted-foreground">
               {post.data.date && (
-                <time dateTime={post.data.date}>
+                <time dateTime={new Date(post.data.date).toISOString()}>
                   {new Date(post.data.date).toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'long',
