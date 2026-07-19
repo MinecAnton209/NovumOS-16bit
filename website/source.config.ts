@@ -1,10 +1,25 @@
 import { defineConfig, defineDocs, defineCollections } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { z } from 'zod';
+import { remarkMermaid } from './remark-mermaid';
 
-// Documentation with i18n — dir-based parser uses en/ and ru/ subdirectories as locale
-export const docs = defineDocs({
-  dir: 'content/docs',
+// English documentation
+export const enDocs = defineDocs({
+  dir: 'content/docs/en',
+  docs: {
+    schema: pageSchema,
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
+  meta: {
+    schema: metaSchema,
+  },
+});
+
+// Russian documentation
+export const ruDocs = defineDocs({
+  dir: 'content/docs/ru',
   docs: {
     schema: pageSchema,
     postprocess: {
@@ -26,4 +41,8 @@ export const blogPosts = defineCollections({
   }),
 });
 
-export default defineConfig({});
+export default defineConfig({
+  mdxOptions: {
+    remarkPlugins: [remarkMermaid],
+  },
+});

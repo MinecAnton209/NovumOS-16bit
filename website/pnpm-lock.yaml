@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      beautiful-mermaid:
+        specifier: ^1.1.3
+        version: 1.1.3
       cnfast:
         specifier: ^0.0.8
         version: 0.0.8
@@ -26,6 +29,12 @@ importers:
       lucide-react:
         specifier: ^1.24.0
         version: 1.25.0(react@19.2.7)
+      mdast-util-mdx-jsx:
+        specifier: ^3.2.0
+        version: 3.2.0
+      mdast-util-mdxjs-esm:
+        specifier: ^2.0.1
+        version: 2.0.1
       next:
         specifier: 16.2.10
         version: 16.2.10(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -35,6 +44,9 @@ importers:
       react-dom:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
+      unist-util-visit:
+        specifier: ^5.1.0
+        version: 5.1.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -803,6 +815,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  beautiful-mermaid@1.1.3:
+    resolution: {integrity: sha512-TItrtrAyHp1vwFfFVYauWGrquouk/6SS21Aq3RsxindSYZODcN4xYrPZD6BiZRU+o5mKJzDPz9MUSMvELdylyg==}
+
   caniuse-lite@1.0.30001806:
     resolution: {integrity: sha512-72Cuvd95zbSYPKq6Fhg8eDJRlzgWDf7/mtoZv6Qe/DYNCEBdNxoA3+rZAU2ZhGCpZlns3EssFavaZomckT5Uuw==}
 
@@ -880,12 +895,19 @@ packages:
   dompurify@3.4.12:
     resolution: {integrity: sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg==}
 
+  elkjs@0.11.1:
+    resolution: {integrity: sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==}
+
   enhanced-resolve@5.24.2:
     resolution: {integrity: sha512-rpsZEGT1jFuve6QlpyRp9ckQ+kN61hvF9BzCPyMdaKTm8UJce96KBn3sorXOFXlzjPrs3Vc4T1NsSroZ3PxlFw==}
     engines: {node: '>=10.13.0'}
 
   entities@6.0.1:
     resolution: {integrity: sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g==}
+    engines: {node: '>=0.12'}
+
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
     engines: {node: '>=0.12'}
 
   esast-util-from-estree@2.0.0:
@@ -2241,6 +2263,11 @@ snapshots:
 
   baseline-browser-mapping@2.10.43: {}
 
+  beautiful-mermaid@1.1.3:
+    dependencies:
+      elkjs: 0.11.1
+      entities: 7.0.1
+
   caniuse-lite@1.0.30001806: {}
 
   ccount@2.0.1: {}
@@ -2297,12 +2324,16 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
 
+  elkjs@0.11.1: {}
+
   enhanced-resolve@5.24.2:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.3
 
   entities@6.0.1: {}
+
+  entities@7.0.1: {}
 
   esast-util-from-estree@2.0.0:
     dependencies:
