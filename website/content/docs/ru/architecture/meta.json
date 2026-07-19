@@ -1,0 +1,10 @@
+{
+    "pages":  [
+                  "overview",
+                  "registers",
+                  "isa",
+                  "execution-cycle",
+                  "memory-map"
+              ],
+    "title":  "Архитектура"
+}

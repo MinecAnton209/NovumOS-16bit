@@ -1,0 +1,8 @@
+{
+    "pages":  [
+                  "overview",
+                  "uart",
+                  "vga"
+              ],
+    "title":  "Периферия"
+}

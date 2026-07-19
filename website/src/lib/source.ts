@@ -1,17 +1,14 @@
-import { enDocs, ruDocs, blogPosts } from 'collections/server';
+import { docs, blogPosts } from 'collections/server';
 import { toFumadocsSource } from 'fumadocs-mdx/runtime/server';
-import { multiple, loader } from 'fumadocs-core/source';
+import { loader } from 'fumadocs-core/source';
 import { i18n } from './i18n';
 import { docsRoute } from './shared';
 
-// Combined i18n source — single loader handles both en and ru
+// Single docs collection with dir-based i18n — en/ and ru/ subdirectories
 export const source = loader({
   baseUrl: docsRoute,
   i18n,
-  source: multiple({
-    en: enDocs.toFumadocsSource(),
-    ru: ruDocs.toFumadocsSource(),
-  }),
+  source: docs.toFumadocsSource(),
 });
 
 // Blog (shared between languages)

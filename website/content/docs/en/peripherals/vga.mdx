@@ -1,0 +1,110 @@
+---
+title: VGA Text Mode
+---
+
+## Overview
+
+NovumOS-16bit provides VGA-compatible text output through I/O ports. Unlike traditional x86 VGA hardware, there is no memory-mapped buffer. Instead, the CPU writes characters and control commands to I/O ports, and the emulator maintains an internal 80×25 text buffer that is rendered to the terminal.
+
+## I/O Port Interface
+
+The VGA peripheral is accessed through two I/O ports:
+
+| Port | Direction | Description |
+|------|-----------|-------------|
+| `0x10` | Write | Write a character to the text buffer at the current cursor position |
+| `0x11` | Write | Control command (clear screen or flush) |
+
+## Port 0x10 — Character Output
+
+Writing a character to port 0x10 places it in the internal VGA text buffer at the current cursor position, then advances the cursor by one column.
+
+```asm
+mov al, 'A'
+out 0x10, al   ; Display 'A' at current cursor, advance cursor
+```
+
+**Special character handling:**
+
+| Character | Action |
+|-----------|--------|
+| Printable (0x20–0x7E) | Display at cursor, cursor advances |
+| `\r` (0x0D) | Cursor moves to column 0 of current row |
+| `\n` (0x0A) | Cursor moves to next row, column 0 |
+| `\b` (0x08) | Cursor moves back one column, clears character at new position |
+| `\t` (0x09) | Cursor advances to next 8-column tab stop |
+
+**Line wrapping:** When the cursor reaches column 80 (the end of a row), it wraps to column 0 of the next row.
+
+**Scrolling:** When the cursor is at row 25 and a newline or wrapping occurs, the entire screen scrolls up by one row. Row 0 is discarded, rows 1–24 shift up, and row 25 is cleared.
+
+## Port 0x11 — Control Commands
+
+Writing a 16-bit value to port 0x11 triggers a control operation:
+
+| Value | Command | Description |
+|-------|---------|-------------|
+| `0x0001` | Clear screen | Fill entire buffer with spaces, reset cursor to (0, 0) |
+| `0x0002` | Flush | Mark the buffer as dirty, triggering a terminal re-render |
+
+```asm
+mov ax, 0x0001
+out 0x11, ax   ; Clear the screen
+
+mov ax, 0x0002
+out 0x11, ax   ; Mark dirty / flush to terminal
+```
+
+## Text Buffer
+
+The emulator maintains an internal 80×25 text buffer. Each cell is 16 bits:
+
+| Byte | Description |
+|------|-------------|
+| Low byte | ASCII character code |
+| High byte | Attribute/color byte |
+
+### Buffer Dimensions
+
+| Property | Value |
+|----------|-------|
+| Columns | 80 |
+| Rows | 25 |
+| Total Cells | 2000 |
+
+These are the default terminal size, not fixed — the emulator renders the buffer to the terminal using ANSI escape codes.
+
+### Color Attribute
+
+The attribute byte uses the same format as standard VGA text mode:
+
+| Bit | Name | Description |
+|-----|------|-------------|
+| D0–D3 | Foreground | 16 foreground colors |
+| D4–D6 | Background | 8 background colors |
+| D7 | Blink | 1 = blink, 0 = normal |
+
+### Common Attribute Values
+
+| Byte | Effect |
+|------|--------|
+| `0x07` | Light gray on black (default) |
+| `0x0F` | Bright white on black |
+| `0x70` | Black on light gray (inverted) |
+| `0x1F` | Bright white on blue (information) |
+| `0x4F` | Bright white on red (error) |
+| `0x2F` | Bright white on green (success) |
+
+## Rendering
+
+The VGA buffer is rendered to the terminal via ANSI escape codes. On each flush (port 0x11, value 0x0002) or when the buffer changes, the emulator:
+
+1. Clears the terminal screen with `\x1B[2J`
+2. Draws all 25 rows as plain text
+3. Re-renders only when the buffer has changed (using a previous-frame comparison)
+
+The VGA output is also mirrored to the UART TX buffer, so characters written to port 0x10 appear in the terminal even without explicit flushing.
+
+## Port-Mapped Only
+
+There is no memory-mapped VGA buffer. All display interaction goes through ports 0x10 and 0x11. The emulator's internal 80×25 buffer is not directly accessible from the CPU's memory address space.

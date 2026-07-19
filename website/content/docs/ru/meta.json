@@ -1,4 +1,4 @@
 {
-  "title": "Документация",
-  "pages": ["index", "test"]
+  "pages": ["index", "architecture", "isa", "boot", "build", "emulator", "peripherals", "wrappers"],
+  "title": "Документация"
 }

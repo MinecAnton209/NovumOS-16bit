@@ -1,0 +1,4 @@
+{
+  "title": "Instruction Set",
+  "pages": ["instruction-set", "instruction-encoding", "flags-behavior"]
+}

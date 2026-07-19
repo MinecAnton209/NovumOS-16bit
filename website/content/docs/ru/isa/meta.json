@@ -1,0 +1,8 @@
+{
+    "pages":  [
+                  "instruction-set",
+                  "instruction-encoding",
+                  "flags-behavior"
+              ],
+    "title":  "Набор инструкций"
+}
