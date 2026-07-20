@@ -41,72 +41,87 @@ test "add generates correct u16" {
     try std.testing.expectEqual(@as(u16, 0xA010), result);
 }
 
+test "adc generates correct u16" {
+    const result = asm_.adc(.AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xA110), result);
+}
+
 test "sub generates correct u16" {
     const result = asm_.sub(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA110), result);
+    try std.testing.expectEqual(@as(u16, 0xA210), result);
+}
+
+test "sbb generates correct u16" {
+    const result = asm_.sbb(.AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xA310), result);
 }
 
 test "cmp generates correct u16" {
     const result = asm_.cmp(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA210), result);
+    try std.testing.expectEqual(@as(u16, 0xA410), result);
 }
 
 test "and generates correct u16" {
     const result = asm_.@"and"(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA410), result);
+    try std.testing.expectEqual(@as(u16, 0xA610), result);
 }
 
 test "or generates correct u16" {
     const result = asm_.@"or"(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA510), result);
+    try std.testing.expectEqual(@as(u16, 0xA710), result);
 }
 
 test "xor generates correct u16" {
     const result = asm_.xor(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA610), result);
+    try std.testing.expectEqual(@as(u16, 0xA810), result);
 }
 
 test "shl generates correct u16" {
     const result = asm_.shl(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA710), result);
+    try std.testing.expectEqual(@as(u16, 0xA910), result);
 }
 
 test "shr generates correct u16" {
     const result = asm_.shr(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA810), result);
+    try std.testing.expectEqual(@as(u16, 0xAA10), result);
 }
 
 test "inc generates correct u16" {
     const result = asm_.inc(.AX);
-    try std.testing.expectEqual(@as(u16, 0xA900), result);
+    try std.testing.expectEqual(@as(u16, 0xAB00), result);
 }
 
 test "dec generates correct u16" {
     const result = asm_.dec(.AX);
-    try std.testing.expectEqual(@as(u16, 0xA800), result);
+    try std.testing.expectEqual(@as(u16, 0xAC00), result);
 }
 
 test "not generates correct u16" {
     const result = asm_.not(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAB00), result);
+    try std.testing.expectEqual(@as(u16, 0xAD00), result);
 }
 
 test "neg generates correct u16" {
     const result = asm_.neg(.AX);
-    try std.testing.expectEqual(@as(u16, 0xAC00), result);
+    try std.testing.expectEqual(@as(u16, 0xAE00), result);
 }
 
 test "test generates correct u16" {
     const result = asm_.test_(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA310), result);
+    try std.testing.expectEqual(@as(u16, 0xA510), result);
+}
+
+test "xchg generates correct u16" {
+    const result = asm_.xchg(.AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xAF10), result);
 }
 
 test "all registers work with add" {
     const tests_arr = [_]struct { dst: ISA.Register, src: ISA.Register, expected: u16 }{
         .{ .dst = .AX, .src = .BX, .expected = 0xA010 },
-        .{ .dst = .BX, .src = .CX, .expected = 0xA120 },
-        .{ .dst = .CX, .src = .DX, .expected = 0xA230 },
-        .{ .dst = .DX, .src = .AX, .expected = 0xA300 },
+        .{ .dst = .BX, .src = .CX, .expected = 0xA060 },
+        .{ .dst = .CX, .src = .DX, .expected = 0xA0B0 },
+        .{ .dst = .DX, .src = .AX, .expected = 0xA0C0 },
     };
     for (tests_arr) |t| {
         const result = asm_.add(t.dst, t.src);
@@ -352,14 +367,14 @@ test "complex program with loops and subroutines" {
 
 test "shl_imm generates correct instructions" {
     const result = asm_.shl_imm(.AX, 3);
-    try std.testing.expectEqual(@as(u32, 0x14000000), result[0]); // MOV CX, 3
-    try std.testing.expectEqual(@as(u32, 0xA900), @as(u32, result[1])); // SHL AX, CX
+    try std.testing.expectEqual(@as(u32, 0x19000300), result[0]); // MOV CX, 3
+    try std.testing.expectEqual(@as(u32, 0xA920), @as(u32, result[1])); // SHL AX, CX
 }
 
 test "shr_imm generates correct instructions" {
     const result = asm_.shr_imm(.BX, 2);
-    try std.testing.expectEqual(@as(u32, 0x14000000), result[0]); // MOV CX, 2
-    try std.testing.expectEqual(@as(u32, 0xA940), @as(u32, result[1])); // SHR BX, CX
+    try std.testing.expectEqual(@as(u32, 0x19000200), result[0]); // MOV CX, 2
+    try std.testing.expectEqual(@as(u32, 0xAA60), @as(u32, result[1])); // SHR BX, CX
 }
 
 // =============================================================================

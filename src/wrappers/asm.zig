@@ -58,6 +58,16 @@ pub fn sub(dst: ISA.Register, src: ISA.Register) u16 {
     return ISA.encodeAlu(.SUB, dst, src);
 }
 
+/// ADC dst, src — dst = dst + src + carry
+pub fn adc(dst: ISA.Register, src: ISA.Register) u16 {
+    return ISA.encodeAlu(.ADC, dst, src);
+}
+
+/// SBB dst, src — dst = dst - src - carry
+pub fn sbb(dst: ISA.Register, src: ISA.Register) u16 {
+    return ISA.encodeAlu(.SBB, dst, src);
+}
+
 /// CMP dst, src — Compare (sets flags, result discarded)
 pub fn cmp(dst: ISA.Register, src: ISA.Register) u16 {
     return ISA.encodeAlu(.CMP, dst, src);
@@ -106,6 +116,11 @@ pub fn not(dst: ISA.Register) u16 {
 /// NEG dst — dst = 0 - dst (two's complement negate)
 pub fn neg(dst: ISA.Register) u16 {
     return ISA.encodeAlu(.NEG, dst, .AX);
+}
+
+/// XCHG dst, src — Exchange (swap) dst and src register values
+pub fn xchg(dst: ISA.Register, src: ISA.Register) u16 {
+    return ISA.encodeAlu(.XCHG, dst, src);
 }
 
 /// TEST dst, src — Bitwise AND (result discarded, flags only)
@@ -324,8 +339,10 @@ pub fn in_char(reg: ISA.Register) u32 {
 }
 
 // =============================================================================
-// Software Multiply / Divide (CPU has no MUL/DIV instructions)
+// Multiply / Divide (CPU has no MUL/DIV instructions — software only)
 // =============================================================================
+// The TTL ALU has no MUL or DIV in hardware. These must be implemented
+// as software routines using shifts and addition/subtraction loops.
 // TODO: Implement when Program Builder is ready.
 // mul/div require runtime code generation with loops and forward jumps,
 // which cannot be expressed as comptime instruction arrays.

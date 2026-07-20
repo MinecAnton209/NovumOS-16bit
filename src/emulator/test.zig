@@ -245,8 +245,113 @@ test "NEG reg" {
 }
 
 // =============================================================================
-// ALU Exchange Test
+// ALU Carry Operations (ADC, SBB)
 // =============================================================================
+
+// ADC AX, BX — AX = AX + BX + carry = 5 + 3 + 0 = 8 (carry=0)
+test "ADC reg, reg no carry" {
+    var cpu = CPU{};
+    cpu.ax = 0x0005;
+    cpu.bx = 0x0003;
+    cpu.setCarry(false);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADC, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0008), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+// ADC with carry in: 5 + 3 + 1 = 9
+test "ADC reg, reg with carry" {
+    var cpu = CPU{};
+    cpu.ax = 0x0005;
+    cpu.bx = 0x0003;
+    cpu.setCarry(true);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADC, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0009), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+// ADC with overflow: 0xFFFF + 1 + 0 = 0x0000, Carry=1
+test "ADC overflow" {
+    var cpu = CPU{};
+    cpu.ax = 0xFFFF;
+    cpu.bx = 0x0001;
+    cpu.setCarry(false);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.ADC, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0000), cpu.ax);
+    try std.testing.expect(cpu.getCarry());
+    try std.testing.expect(cpu.getZero());
+}
+
+// SBB AX, BX — AX = AX - BX - carry = 10 - 3 - 0 = 7 (carry=0)
+test "SBB reg, reg no borrow" {
+    var cpu = CPU{};
+    cpu.ax = 0x000A;
+    cpu.bx = 0x0003;
+    cpu.setCarry(false);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SBB, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0007), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+// SBB with borrow in: 10 - 3 - 1 = 6
+test "SBB reg, reg with borrow" {
+    var cpu = CPU{};
+    cpu.ax = 0x000A;
+    cpu.bx = 0x0003;
+    cpu.setCarry(true);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SBB, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x0006), cpu.ax);
+    try std.testing.expect(!cpu.getCarry());
+}
+
+// SBB with borrow: 0 - 1 - 0 = 0xFFFF, Carry=1
+test "SBB borrow" {
+    var cpu = CPU{};
+    cpu.ax = 0x0000;
+    cpu.bx = 0x0001;
+    cpu.setCarry(false);
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.SBB, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0xFFFF), cpu.ax);
+    try std.testing.expect(cpu.getCarry());
+}
+
+// =============================================================================
+// ALU Exchange Test (XCHG)
+// =============================================================================
+
+// XCHG AX, BX — swap values between AX and BX
+test "XCHG reg, reg" {
+    var cpu = CPU{};
+    cpu.ax = 0x1234;
+    cpu.bx = 0xABCD;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XCHG, .AX, .BX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
+    try std.testing.expectEqual(@as(u16, 0x1234), cpu.bx);
+}
+
+// XCHG same register — no-op
+test "XCHG same reg" {
+    var cpu = CPU{};
+    cpu.ax = 0x5555;
+    writeInstruction(&cpu.memory, 0, ISA.encodeAlu(.XCHG, .AX, .AX));
+
+    try cpu.step();
+    try std.testing.expectEqual(@as(u16, 0x5555), cpu.ax);
+}
 
 // =============================================================================
 // Stack Tests (PUSH/POP)

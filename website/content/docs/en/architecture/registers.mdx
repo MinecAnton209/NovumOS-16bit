@@ -329,20 +329,21 @@ ALU sub-opcodes (4-bit field in bits 11:8):
 | Value | Mnemonic | Operation |
 |-------|----------|-----------|
 | 0x0 | ADD | `dst = dst + src` |
-| 0x1 | SUB | `dst = dst - src` |
-| 0x2 | CMP | Compare (flags only, no result) |
-| 0x3 | TEST | Bitwise AND (flags only, no result) |
-| 0x4 | AND | `dst = dst AND src` |
-| 0x5 | OR | `dst = dst OR src` |
-| 0x6 | XOR | `dst = dst XOR src` |
-| 0x7 | SHL | `dst = dst << src` |
-| 0x8 | SHR | `dst = dst >> src` |
-| 0x9 | INC | `dst = dst + 1` |
-| 0xA | DEC | `dst = dst - 1` |
-| 0xB | NOT | `dst = NOT dst` |
-| 0xC | NEG | `dst = 0 - dst` |
-| 0xD | MUL | `dst = dst * src (planned)` |
-| 0xE | DIV | `dst = dst / src (planned)` |
+| 0x1 | ADC | `dst = dst + src + C` |
+| 0x2 | SUB | `dst = dst - src` |
+| 0x3 | SBB | `dst = dst - src - C` |
+| 0x4 | CMP | Compare (flags only, no result) |
+| 0x5 | TEST | Bitwise AND (flags only, no result) |
+| 0x6 | AND | `dst = dst AND src` |
+| 0x7 | OR | `dst = dst OR src` |
+| 0x8 | XOR | `dst = dst XOR src` |
+| 0x9 | SHL | `dst = dst << src` |
+| 0xA | SHR | `dst = dst >> src` |
+| 0xB | INC | `dst = dst + 1` |
+| 0xC | DEC | `dst = dst - 1` |
+| 0xD | NOT | `dst = NOT dst` |
+| 0xE | NEG | `dst = 0 - dst` |
+| 0xF | XCHG | Swap `dst` and `src` |
 
 ### 32-bit Instruction Format
 

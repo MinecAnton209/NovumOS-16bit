@@ -101,34 +101,45 @@ flowchart LR
 
 **Semantics for ADD (ALU sub-op 0x0):**
 
+
 - **C = 1:** The addition produced a carry out of bit 15 (result > 0xFFFF unsigned)
 - **C = 0:** No carry out occurred
 
-**Semantics for SUB and CMP (ALU sub-ops 0x1, 0x2):**
+**Semantics for SUB and CMP (ALU sub-ops 0x2, 0x4):**
 
 - **C = 1:** A borrow occurred (source > destination unsigned)
 - **C = 0:** No borrow (destination ≥ source unsigned)
 
-**Semantics for NEG (ALU sub-op 0xC):**
+**Semantics for ADC (ALU sub-op 0x1):**
+
+- **C = 1:** The addition including carry in produced a carry out of bit 15
+- **C = 0:** No carry out occurred
+
+**Semantics for SBB (ALU sub-op 0x3):**
+
+- **C = 1:** A borrow occurred (source + borrow > destination unsigned)
+- **C = 0:** No borrow
+
+**Semantics for NEG (ALU sub-op 0xE):**
 
 - **C = 1:** Result is non-zero (input was non-zero)
 - **C = 0:** Result is zero (input was zero)
 
-**Semantics for SHL (ALU sub-op 0x7):**
+**Semantics for SHL (ALU sub-op 0x9):**
 
 - **C = 1:** The last bit shifted out of the MSB was 1
 - **C = 0:** The last bit shifted out of the MSB was 0
 
-**Semantics for SHR (ALU sub-op 0x8):**
+**Semantics for SHR (ALU sub-op 0xA):**
 
 - **C = 1:** The last bit shifted out of the LSB was 1
 - **C = 0:** The last bit shifted out of the LSB was 0
 
-**Semantics for INC/DEC (ALU sub-ops 0x9, 0xA):**
+**Semantics for INC/DEC (ALU sub-ops 0xB, 0xC):**
 
 - Carry is **not affected** by INC or DEC. This preserves the carry flag across loop counter updates in multi-word arithmetic.
 
-**Semantics for AND/OR/XOR (ALU sub-ops 0x4, 0x5, 0x6):**
+**Semantics for AND/OR/XOR (ALU sub-ops 0x6, 0x7, 0x8):**
 
 - Carry is **cleared** to 0.
 
@@ -204,8 +215,9 @@ This inversion means:
 | **ALU DEC**     | ✓ | — | ✓ | Z = (result == 0); S = (MSB); C unchanged |
 | **ALU NOT**     | — | — | — | No flags modified |
 | **ALU NEG**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (result ≠ 0); S = (MSB) |
-| **ALU MUL**     | TBD | TBD | TBD | Planned |
-| **ALU DIV**     | TBD | TBD | TBD | Planned |
+| **ALU ADC**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (carry out with carry in); S = (MSB) |
+| **ALU SBB**     | ✓ | ✓ | ✓ | Z = (result == 0); C = (borrow with borrow in); S = (MSB) |
+| **ALU XCHG**    | — | — | — | No flags modified |
 | **JZ**          | — | — | — | Tests Z, does not modify flags |
 | **JNZ**         | — | — | — | Tests Z, does not modify flags |
 | **JC**          | — | — | — | Tests C, does not modify flags |
@@ -213,7 +225,7 @@ This inversion means:
 | **JS**          | — | — | — | Tests S, does not modify flags |
 | **JNS**         | — | — | — | Tests S, does not modify flags |
 
-**Legend:** ✓ = modified, — = unchanged, TBD = to be determined
+**Legend:** ✓ = modified, — = unchanged
 
 ### Flag Update Timing
 
@@ -304,7 +316,7 @@ flowchart TD
 
 ## Carry Propagation in Multi-Word Arithmetic
 
-The carry flag enables arithmetic on values larger than 16 bits by chaining operations across multiple words. Since the ISA does not include ADC (add with carry), carry propagation requires explicit checks and branches.
+The carry flag enables arithmetic on values larger than 16 bits by chaining operations across multiple words. The ISA includes ADC (add with carry) and SBB (subtract with borrow) for efficient multi-word arithmetic without branches.
 
 ### 32-bit Addition
 
@@ -312,41 +324,35 @@ To add two 32-bit values stored in register pairs:
 
 ```mermaid
 flowchart TD
-    subgraph "32-bit addition: (DX:AX) += (high:low)"
-        A1["ADD AX, low_word"] -->|"C=carry"| CHECK{JC?}
-        CHECK -->|"carry set"| C1["ADD DX, high_word"]
-        CHECK -->|"carry set"| C2["ADD DX, 1"]
-        CHECK -->|"no carry"| C3["ADD DX, high_word (no increment)"]
+    subgraph "32-bit addition: (DX:AX) += (CX:BX)"
+        A1["ADD AX, BX<br/>C = carry from low word"] --> A2["ADC DX, CX<br/>DX += CX + C"]
     end
 ```
 
 **Step-by-step:**
 
-1. `ADD AX, low_word` — adds the low 16 bits. If C is set, a carry must be propagated.
-2. `ADD DX, high_word` — adds the high 16 bits.
-3. If C was set after step 1, `ADD DX, 1` to incorporate the carry.
-
-More practically, the carry can be handled by loading it into a register and adding:
+1. `ADD AX, BX` — adds the low 16 bits. The Carry flag is set if a carry out occurs.
+2. `ADC DX, CX` — adds the high 16 bits plus the carry from the low word. Single-cycle, no branch needed.
 
 ```
 ADD  AX, low_word       ; C = carry from low word
-MOV  CX, 0
-ADC  CX, 0              ; Without ADC, this must be emulated
-; Alternatively, use a branch:
-JC   .add_carry
-JMP  .no_carry
-.add_carry:
-ADD  DX, high_word
-ADD  DX, 1
-JMP  .done
-.no_carry:
-ADD  DX, high_word
-.done:
+ADC  DX, high_word      ; DX = DX + high_word + C
+; 32-bit addition complete in 2 cycles
+```
+
+### 32-bit Subtraction
+
+To subtract two 32-bit values:
+
+```
+SUB  AX, low_word       ; C = borrow from low word
+SBB  DX, high_word      ; DX = DX - high_word - C
+; 32-bit subtraction complete in 2 cycles
 ```
 
 ### Carry Preservation with INC/DEC
 
-INC and DEC (ALU sub-ops 0x9, 0xA) do **not** affect the carry flag. This allows loop counters to be updated without disturbing the carry state:
+INC and DEC (ALU sub-ops 0xB, 0xC) do **not** affect the carry flag. This allows loop counters to be updated without disturbing the carry state:
 
 ```
 ADD AX, BX              ; C = carry from addition
@@ -356,22 +362,11 @@ JNZ loop                ; continue loop without losing carry
 ; Carry from the original ADD is still available
 ```
 
-### 32-bit Subtraction
-
-The borrow propagates similarly:
-
-```
-SUB AX, low_word        ; C = borrow
-; Check C and branch to subtract 1 from high word if needed
-SUB DX, high_word       ; subtract high word
-; If C was 1 (borrow needed), subtract 1 more from DX
-```
-
 ---
 
 ## Shift Flag Behavior
 
-### SHL — Shift Left (ALU sub-op 0x7)
+### SHL — Shift Left (ALU sub-op 0x9)
 
 SHL shifts all bits toward the MSB. The MSB is shifted into the carry flag. The LSB is filled with zero.
 
@@ -411,7 +406,7 @@ For a shift by N bits, the carry flag is set to bit (15 − N) of the original v
 
 Shifting a 16-bit register left by 16 produces zero. The carry flag is set to the original LSB (bit 0), which is the last bit to exit the register.
 
-### SHR — Shift Right (ALU sub-op 0x8)
+### SHR — Shift Right (ALU sub-op 0xA)
 
 SHR shifts all bits toward the LSB. The LSB is shifted into the carry flag. The MSB is filled with zero (logical shift, not arithmetic).
 
@@ -456,7 +451,7 @@ Shifting a 16-bit register right by 16 produces zero. The carry flag is set to t
 
 ## Comparison and Testing
 
-The NovumOS-16bit provides CMP (ALU sub-op 0x2) and TEST (ALU sub-op 0x3) for comparison without modifying register values.
+The NovumOS-16bit provides CMP (ALU sub-op 0x4) and TEST (ALU sub-op 0x5) for comparison without modifying register values.
 
 ### Equality Test
 
@@ -641,7 +636,16 @@ C ← (carry out of bit 15)
 S ← (Result[15] == 1)
 ```
 
-### ALU SUB / CMP (AluOp 0x1 / 0x2)
+### ALU ADC (AluOp 0x1)
+
+```
+Result = dst + src + C
+Z ← (Result == 0)
+C ← (carry out of bit 15, including carry in)
+S ← (Result[15] == 1)
+```
+
+### ALU SUB / CMP (AluOp 0x2 / 0x4)
 
 ```
 Result = dst - src
@@ -650,7 +654,16 @@ C ← (src > dst)        // unsigned borrow
 S ← (Result[15] == 1)
 ```
 
-### ALU TEST (AluOp 0x3)
+### ALU SBB (AluOp 0x3)
+
+```
+Result = dst - src - C
+Z ← (Result == 0)
+C ← (src + C > dst)   // unsigned borrow with borrow in
+S ← (Result[15] == 1)
+```
+
+### ALU TEST (AluOp 0x5)
 
 ```
 Result = dst & src
@@ -659,7 +672,7 @@ C ← 0 (cleared)
 S ← (Result[15] == 1)
 ```
 
-### ALU AND / OR / XOR (AluOp 0x4 / 0x5 / 0x6)
+### ALU AND / OR / XOR (AluOp 0x6 / 0x7 / 0x8)
 
 ```
 Result = dst OP src
@@ -668,7 +681,7 @@ C ← 0 (cleared)
 S ← (Result[15] == 1)
 ```
 
-### ALU SHL (AluOp 0x7)
+### ALU SHL (AluOp 0x9)
 
 ```
 for i in 1..count:
@@ -678,7 +691,7 @@ Z ← (dst == 0)
 S ← (dst[15] == 1)
 ```
 
-### ALU SHR (AluOp 0x8)
+### ALU SHR (AluOp 0xA)
 
 ```
 for i in 1..count:
@@ -688,7 +701,7 @@ Z ← (dst == 0)
 S ← (dst[15] == 1)   // always 0 if count > 0
 ```
 
-### ALU INC (AluOp 0x9)
+### ALU INC (AluOp 0xB)
 
 ```
 Result = dst + 1
@@ -697,7 +710,7 @@ C ← unchanged
 S ← (Result[15] == 1)
 ```
 
-### ALU DEC (AluOp 0xA)
+### ALU DEC (AluOp 0xC)
 
 ```
 Result = dst - 1
@@ -706,14 +719,14 @@ C ← unchanged
 S ← (Result[15] == 1)
 ```
 
-### ALU NOT (AluOp 0xB)
+### ALU NOT (AluOp 0xD)
 
 ```
 dst ← ~dst
 (no flags affected)
 ```
 
-### ALU NEG (AluOp 0xC)
+### ALU NEG (AluOp 0xE)
 
 ```
 Result = 0 - dst
@@ -722,16 +735,29 @@ C ← (Result != 0)     // set if input was non-zero
 S ← (Result[15] == 1)
 ```
 
-### ALU MUL (AluOp 0xD — planned)
+### ALU ADC (AluOp 0x1)
 
 ```
-Behavior TBD
+Result = dst + src + C
+Z ← (Result == 0)
+C ← (carry out after including carry in)
+S ← (Result[15] == 1)
 ```
 
-### ALU DIV (AluOp 0xE — planned)
+### ALU SBB (AluOp 0x3)
 
 ```
-Behavior TBD
+Result = dst - src - C
+Z ← (Result == 0)
+C ← (borrow after including borrow in)
+S ← (Result[15] == 1)
+```
+
+### ALU XCHG (AluOp 0xF)
+
+```
+Swap dst and src
+(no flags affected)
 ```
 
 ---

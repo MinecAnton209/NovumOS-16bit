@@ -36,7 +36,7 @@ pub const CPU = struct {
     ax: u16 = 0,   // Accumulator — primary working register, ALU results
     bx: u16 = 0,   // Base — base register for indexed addressing
     cx: u16 = 0,   // Counter — loop counters, shift counts
-    dx: u16 = 0,   // Data — I/O port addresses, multiply/divide operands
+    dx: u16 = 0,   // Data — I/O port addresses, arithmetic operands
     ip: u16 = 0,   // Instruction Pointer — address of NEXT instruction to fetch
     sp: u16 = 0xFFFE, // Stack Pointer — top of stack, grows DOWNWARD
     flags: u16 = 0,    // Flags register — bit 0=Z, bit 1=C, bit 2=S
@@ -937,7 +937,9 @@ pub const CPU = struct {
     ///
     /// Operations:
     ///   ADD  — dst = dst + src, set Carry on overflow
+    ///   ADC  — dst = dst + src + carry, set Carry on overflow
     ///   SUB  — dst = dst - src, set Carry on borrow
+    ///   SBB  — dst = dst - src - carry, set Carry on borrow
     ///   CMP  — same as SUB but result is discarded (flags only)
     ///   TEST — dst AND src, result discarded, flags only
     ///   AND  — dst = dst AND src
@@ -949,6 +951,7 @@ pub const CPU = struct {
     ///   DEC  — dst = dst - 1
     ///   NOT  — dst = NOT dst (bitwise complement)
     ///   NEG  — dst = 0 - dst (two's complement negate)
+    ///   XCHG — swap dst and src register values, no flags affected
     fn executeAlu(self: *CPU, alu_op: ISA.AluOp, dst: ISA.Register, src: ISA.Register) void {
         const a = self.getReg(dst);
         const b = self.getReg(src);
@@ -961,12 +964,30 @@ pub const CPU = struct {
                 self.setCarry(carry != 0);
                 self.updateFlags(result);
             },
+            .ADC => {
+                // Add with carry: dst = dst + src + carry
+                const carry_in: u16 = if (self.getCarry()) 1 else 0;
+                const r1, const c1 = @addWithOverflow(a, b);
+                const r2, const c2 = @addWithOverflow(r1, carry_in);
+                self.setReg(dst, r2);
+                self.setCarry((c1 != 0) or (c2 != 0));
+                self.updateFlags(r2);
+            },
             .SUB => {
                 // Subtraction with borrow flag set on underflow
                 const result, const borrow = @subWithOverflow(a, b);
                 self.setReg(dst, result);
                 self.setCarry(borrow != 0);
                 self.updateFlags(result);
+            },
+            .SBB => {
+                // Subtract with borrow: dst = dst - src - carry
+                const borrow_in: u16 = if (self.getCarry()) 1 else 0;
+                const r1, const b1 = @subWithOverflow(a, b);
+                const r2, const b2 = @subWithOverflow(r1, borrow_in);
+                self.setReg(dst, r2);
+                self.setCarry((b1 != 0) or (b2 != 0));
+                self.updateFlags(r2);
             },
             .CMP => {
                 // Compare (subtract without storing result)
@@ -1041,6 +1062,12 @@ pub const CPU = struct {
                 self.setReg(dst, result);
                 self.setCarry(result != 0);
                 self.updateFlags(result);
+            },
+            .XCHG => {
+                // Exchange: swap dst and src register values. No flags affected.
+                const tmp = self.getReg(dst);
+                self.setReg(dst, self.getReg(src));
+                self.setReg(src, tmp);
             },
         }
     }

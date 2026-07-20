@@ -143,88 +143,109 @@ test "encodeAlu ADD AX, BX" {
     try std.testing.expectEqual(@as(u16, 0xA010), inst);
 }
 
+test "encodeAlu ADC AX, BX" {
+    // ALU=0xA, ADC=1, dst=AX(0), src=BX(1)
+    // 1010 0001 00 01 0000 = 0xA110
+    const inst = encodeAlu(.ADC, .AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xA110), inst);
+}
+
 test "encodeAlu SUB BX, AX" {
-    // ALU=0xA, SUB=1, dst=BX(1), src=AX(0)
-    // 1010 0001 01 00 0000 = 0xA140
+    // ALU=0xA, SUB=2, dst=BX(1), src=AX(0)
+    // 1010 0010 01 00 0000 = 0xA240
     const inst = encodeAlu(.SUB, .BX, .AX);
-    try std.testing.expectEqual(@as(u16, 0xA140), inst);
+    try std.testing.expectEqual(@as(u16, 0xA240), inst);
+}
+
+test "encodeAlu SBB BX, AX" {
+    // ALU=0xA, SBB=3, dst=BX(1), src=AX(0)
+    // 1010 0011 01 00 0000 = 0xA340
+    const inst = encodeAlu(.SBB, .BX, .AX);
+    try std.testing.expectEqual(@as(u16, 0xA340), inst);
 }
 
 test "encodeAlu CMP AX, BX" {
-    // ALU=0xA, CMP=2, dst=AX(0), src=BX(1)
-    // 1010 0010 00 01 0000 = 0xA210
-    const inst = encodeAlu(.CMP, .AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA210), inst);
-}
-
-test "encodeAlu TEST AX, BX" {
-    // ALU=0xA, TEST=3, dst=AX(0), src=BX(1)
-    // 1010 0011 00 01 0000 = 0xA310
-    const inst = encodeAlu(.TEST, .AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA310), inst);
-}
-
-test "encodeAlu AND AX, BX" {
-    // ALU=0xA, AND=4, dst=AX(0), src=BX(1)
+    // ALU=0xA, CMP=4, dst=AX(0), src=BX(1)
     // 1010 0100 00 01 0000 = 0xA410
-    const inst = encodeAlu(.AND, .AX, .BX);
+    const inst = encodeAlu(.CMP, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA410), inst);
 }
 
-test "encodeAlu OR AX, BX" {
-    // ALU=0xA, OR=5, dst=AX(0), src=BX(1)
+test "encodeAlu TEST AX, BX" {
+    // ALU=0xA, TEST=5, dst=AX(0), src=BX(1)
     // 1010 0101 00 01 0000 = 0xA510
-    const inst = encodeAlu(.OR, .AX, .BX);
+    const inst = encodeAlu(.TEST, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA510), inst);
 }
 
-test "encodeAlu XOR AX, BX" {
-    // ALU=0xA, XOR=6, dst=AX(0), src=BX(1)
+test "encodeAlu AND AX, BX" {
+    // ALU=0xA, AND=6, dst=AX(0), src=BX(1)
     // 1010 0110 00 01 0000 = 0xA610
-    const inst = encodeAlu(.XOR, .AX, .BX);
+    const inst = encodeAlu(.AND, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA610), inst);
 }
 
-test "encodeAlu SHL AX, BX" {
-    // ALU=0xA, SHL=7, dst=AX(0), src=BX(1)
+test "encodeAlu OR AX, BX" {
+    // ALU=0xA, OR=7, dst=AX(0), src=BX(1)
     // 1010 0111 00 01 0000 = 0xA710
-    const inst = encodeAlu(.SHL, .AX, .BX);
+    const inst = encodeAlu(.OR, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA710), inst);
 }
 
-test "encodeAlu SHR AX, BX" {
-    // ALU=0xA, SHR=8, dst=AX(0), src=BX(1)
+test "encodeAlu XOR AX, BX" {
+    // ALU=0xA, XOR=8, dst=AX(0), src=BX(1)
     // 1010 1000 00 01 0000 = 0xA810
-    const inst = encodeAlu(.SHR, .AX, .BX);
+    const inst = encodeAlu(.XOR, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA810), inst);
 }
 
+test "encodeAlu SHL AX, BX" {
+    // ALU=0xA, SHL=9, dst=AX(0), src=BX(1)
+    // 1010 1001 00 01 0000 = 0xA910
+    const inst = encodeAlu(.SHL, .AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xA910), inst);
+}
+
+test "encodeAlu SHR AX, BX" {
+    // ALU=0xA, SHR=10, dst=AX(0), src=BX(1)
+    // 1010 1010 00 01 0000 = 0xAA10
+    const inst = encodeAlu(.SHR, .AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xAA10), inst);
+}
+
 test "encodeAlu INC AX" {
-    // ALU=0xA, INC=9, dst=AX(0), src=AX(0)
-    // 1010 1001 00 00 0000 = 0xA900
+    // ALU=0xA, INC=11, dst=AX(0), src=AX(0)
+    // 1010 1011 00 00 0000 = 0xAB00
     const inst = encodeAlu(.INC, .AX, .AX);
-    try std.testing.expectEqual(@as(u16, 0xA900), inst);
+    try std.testing.expectEqual(@as(u16, 0xAB00), inst);
 }
 
 test "encodeAlu DEC BX" {
-    // ALU=0xA, DEC=10, dst=BX(1), src=AX(0)
-    // 1010 1010 01 00 0000 = 0xAA40
+    // ALU=0xA, DEC=12, dst=BX(1), src=AX(0)
+    // 1010 1100 01 00 0000 = 0xAC40
     const inst = encodeAlu(.DEC, .BX, .AX);
-    try std.testing.expectEqual(@as(u16, 0xAA40), inst);
+    try std.testing.expectEqual(@as(u16, 0xAC40), inst);
 }
 
 test "encodeAlu NOT CX" {
-    // ALU=0xA, NOT=11, dst=CX(2), src=CX(2)
-    // 1010 1011 10 10 0000 = 0xABA0
+    // ALU=0xA, NOT=13, dst=CX(2), src=CX(2)
+    // 1010 1101 10 10 0000 = 0xADA0
     const inst = encodeAlu(.NOT, .CX, .CX);
-    try std.testing.expectEqual(@as(u16, 0xABA0), inst);
+    try std.testing.expectEqual(@as(u16, 0xADA0), inst);
 }
 
 test "encodeAlu NEG DX" {
-    // ALU=0xA, NEG=12, dst=DX(3), src=DX(3)
-    // 1010 1100 11 11 0000 = 0xACF0
+    // ALU=0xA, NEG=14, dst=DX(3), src=DX(3)
+    // 1010 1110 11 11 0000 = 0xAEF0
     const inst = encodeAlu(.NEG, .DX, .DX);
-    try std.testing.expectEqual(@as(u16, 0xACF0), inst);
+    try std.testing.expectEqual(@as(u16, 0xAEF0), inst);
+}
+
+test "encodeAlu XCHG AX, BX" {
+    // ALU=0xA, XCHG=15, dst=AX(0), src=BX(1)
+    // 1010 1111 00 01 0000 = 0xAF10
+    const inst = encodeAlu(.XCHG, .AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xAF10), inst);
 }
 
 test "encodeAlu bit positions" {

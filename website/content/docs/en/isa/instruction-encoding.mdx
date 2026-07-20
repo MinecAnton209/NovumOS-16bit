@@ -324,21 +324,21 @@ block-beta
 | Binary  | Hex | Mnemonic | Description                          | Flags         |
 |---------|-----|----------|--------------------------------------|---------------|
 | `0000`  | 0x0 | ADD      | dst = dst + src                      | Z, C, S       |
-| `0001`  | 0x1 | SUB      | dst = dst - src                      | Z, C, S       |
-| `0010`  | 0x2 | CMP      | Compare (subtract, flags only)       | Z, C, S       |
-| `0011`  | 0x3 | TEST     | Bitwise AND test (flags only)        | Z, S          |
-| `0100`  | 0x4 | AND      | Bitwise AND                          | Z, S          |
-| `0101`  | 0x5 | OR       | Bitwise OR                           | Z, S          |
-| `0110`  | 0x6 | XOR      | Bitwise exclusive OR                 | Z, S          |
-| `0111`  | 0x7 | SHL      | Shift left logical                   | Z, C, S       |
-| `1000`  | 0x8 | SHR      | Shift right logical                  | Z, C, S       |
-| `1001`  | 0x9 | INC      | Increment: dst = dst + 1             | Z, S          |
-| `1010`  | 0xA | DEC      | Decrement: dst = dst - 1             | Z, S          |
-| `1011`  | 0xB | NOT      | Bitwise complement                   | None          |
-| `1100`  | 0xC | NEG      | Two's complement negate: dst = 0 - dst | Z, C, S     |
-| `1101`  | 0xD | MUL      | Multiply (planned)                   | TBD           |
-| `1110`  | 0xE | DIV      | Divide (planned)                     | TBD           |
-| `1111`  | 0xF | reserved | —                                    | —             |
+| `0001`  | 0x1 | ADC      | dst = dst + src + C (add with carry) | Z, C, S       |
+| `0010`  | 0x2 | SUB      | dst = dst - src                      | Z, C, S       |
+| `0011`  | 0x3 | SBB      | dst = dst - src - C (sub with borrow) | Z, C, S      |
+| `0100`  | 0x4 | CMP      | Compare (subtract, flags only)       | Z, C, S       |
+| `0101`  | 0x5 | TEST     | Bitwise AND test (flags only)        | Z, S          |
+| `0110`  | 0x6 | AND      | Bitwise AND                          | Z, S          |
+| `0111`  | 0x7 | OR       | Bitwise OR                           | Z, S          |
+| `1000`  | 0x8 | XOR      | Bitwise exclusive OR                 | Z, S          |
+| `1001`  | 0x9 | SHL      | Shift left logical                   | Z, C, S       |
+| `1010`  | 0xA | SHR      | Shift right logical                  | Z, C, S       |
+| `1011`  | 0xB | INC      | Increment: dst = dst + 1             | Z, S          |
+| `1100`  | 0xC | DEC      | Decrement: dst = dst - 1             | Z, S          |
+| `1101`  | 0xD | NOT      | Bitwise complement                   | None          |
+| `1110`  | 0xE | NEG      | Two's complement negate: dst = 0 - dst | Z, C, S     |
+| `1111`  | 0xF | XCHG     | Exchange registers                   | —             |
 
 ---
 

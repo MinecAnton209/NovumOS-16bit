@@ -49,21 +49,24 @@ pub const Opcode = enum(u4) {
 /// ALU sub-opcodes — encoded in bits 11:8 of 16-bit ALU instructions.
 /// All ALU operations work on two registers (dst and src).
 /// Result is stored in dst, except CMP and TEST which only set flags.
-/// 8086-compatible encoding: arithmetic first, then logic, then shifts.
+/// Physical TTL ALU encoding — matches the 16-operation TTL ALU chip design.
 pub const AluOp = enum(u4) {
-    ADD = 0b0000,    // dst = dst + src
-    SUB = 0b0001,    // dst = dst - src
-    CMP = 0b0010,    // Compare (subtract without storing result)
-    TEST = 0b0011,   // Bitwise AND (result discarded, flags only)
-    AND = 0b0100,    // dst = dst AND src
-    OR = 0b0101,     // dst = dst OR src
-    XOR = 0b0110,    // dst = dst XOR src
-    SHL = 0b0111,    // dst = dst << src (shift left)
-    SHR = 0b1000,    // dst = dst >> src (shift right)
-    INC = 0b1001,    // dst = dst + 1 (increment)
-    DEC = 0b1010,    // dst = dst - 1 (decrement)
-    NOT = 0b1011,    // dst = NOT dst (bitwise complement)
-    NEG = 0b1100,    // dst = 0 - dst (two's complement negate)
+    ADD  = 0b0000,   // dst = dst + src, set Carry on overflow
+    ADC  = 0b0001,   // dst = dst + src + carry, set Carry on overflow
+    SUB  = 0b0010,   // dst = dst - src, set Carry on borrow
+    SBB  = 0b0011,   // dst = dst - src - carry, set Carry on borrow
+    CMP  = 0b0100,   // Compare (subtract without storing result)
+    TEST = 0b0101,   // Bitwise AND (result discarded, flags only)
+    AND  = 0b0110,   // dst = dst AND src
+    OR   = 0b0111,   // dst = dst OR src
+    XOR  = 0b1000,   // dst = dst XOR src
+    SHL  = 0b1001,   // dst = dst << src (shift left)
+    SHR  = 0b1010,   // dst = dst >> src (shift right)
+    INC  = 0b1011,   // dst = dst + 1 (increment)
+    DEC  = 0b1100,   // dst = dst - 1 (decrement)
+    NOT  = 0b1101,   // dst = NOT dst (bitwise complement)
+    NEG  = 0b1110,   // dst = 0 - dst (two's complement negate)
+    XCHG = 0b1111,   // Exchange dst and src register values
 };
 
 /// Conditional jump sub-opcodes — encoded in bits 11:8.

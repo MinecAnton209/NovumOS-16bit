@@ -149,16 +149,16 @@ Sub-decoded by Mode[11:10] + Size[9:8]:
 | Sub-op | Binary | Mnemonic | Description | Flags |
 |--------|--------|----------|-------------|-------|
 | 0 | `0000` | ADD | Addition | Z, C, S |
-| 1 | `0001` | SUB | Subtraction | Z, C, S |
-| 2 | `0010` | CMP | Compare (flags only) | Z, C, S |
-| 3 | `0011` | TEST | Test (flags only) | Z |
-| 4 | `0100` | ADC | Add with carry | Z, C, S |
-| 5 | `0101` | SBB | Subtract with borrow | Z, C, S |
-| 6 | `0110` | AND | Bitwise AND | Z |
-| 7 | `0111` | OR | Bitwise OR | Z |
-| 8 | `1000` | XOR | Bitwise XOR | Z |
-| 9 | `1001` | SHL | Shift left | Z, C |
-| 10 | `1010` | SHR | Shift right | Z, C |
+| 1 | `0001` | ADC | Add with carry | Z, C, S |
+| 2 | `0010` | SUB | Subtraction | Z, C, S |
+| 3 | `0011` | SBB | Subtract with borrow | Z, C, S |
+| 4 | `0100` | CMP | Compare (flags only) | Z, C, S |
+| 5 | `0101` | TEST | Test (flags only) | Z, S |
+| 6 | `0110` | AND | Bitwise AND | Z, S |
+| 7 | `0111` | OR | Bitwise OR | Z, S |
+| 8 | `1000` | XOR | Bitwise XOR | Z, S |
+| 9 | `1001` | SHL | Shift left | Z, C, S |
+| 10 | `1010` | SHR | Shift right | Z, C, S |
 | 11 | `1011` | INC | Increment | Z, S |
 | 12 | `1100` | DEC | Decrement | Z, S |
 | 13 | `1101` | NOT | Bitwise NOT | — |

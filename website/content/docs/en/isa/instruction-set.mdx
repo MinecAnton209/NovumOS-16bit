@@ -82,7 +82,7 @@ flowchart TD
 
     DT --> MOV[MOV]
 
-    ALU --> ALU_SUB[ALU = 0xA<br/>15 sub-ops: ADD, SUB, AND,<br/>OR, XOR, SHL, SHR, etc.]
+    ALU --> ALU_SUB[ALU = 0xA<br/>16 sub-ops: ADD, ADC, SUB, SBB,<br/>CMP, TEST, AND, OR, XOR, etc.]
 
     CF --> JMP[JMP]
     CF --> JZ[JZ]
@@ -168,21 +168,21 @@ ALU operations follow the same pattern: the result is stored in the destination 
 | Mnemonic | AluOp | Operation | Flags | Description |
 |----------|-------|-----------|-------|-------------|
 | **ADD**  | 0x0   | `dst ← dst + src` | Z, C, S | Integer addition. C set on unsigned overflow (result > 0xFFFF) |
-| **SUB**  | 0x1   | `dst ← dst - src` | Z, C, S | Integer subtraction. C set on unsigned borrow (src > dst) |
-| **CMP**  | 0x2   | `dst - src` (flags only) | Z, C, S | Compare — subtract without storing result. Sets flags for conditional jumps |
-| **TEST** | 0x3   | `dst & src` (flags only) | Z, S | Bitwise AND test — result discarded, flags only. C cleared |
-| **AND**  | 0x4   | `dst ← dst & src` | Z, S | Bitwise AND. C cleared |
-| **OR**   | 0x5   | `dst ← dst \| src` | Z, S | Bitwise OR. C cleared |
-| **XOR**  | 0x6   | `dst ← dst ^ src` | Z, S | Bitwise exclusive OR. C cleared |
-| **SHL**  | 0x7   | `dst ← dst << src` | Z, C, S | Shift left logical. C = last bit shifted out of MSB |
-| **SHR**  | 0x8   | `dst ← dst >> src` | Z, C, S | Shift right logical. C = last bit shifted out of LSB |
-| **INC**  | 0x9   | `dst ← dst + 1` | Z, S | Increment. Does NOT affect Carry flag |
-| **DEC**  | 0xA   | `dst ← dst - 1` | Z, S | Decrement. Does NOT affect Carry flag |
-| **NOT**  | 0xB   | `dst ← ~dst` | None | Bitwise complement (one's complement). No flags affected |
-| **NEG**  | 0xC   | `dst ← 0 - dst` | Z, C, S | Two's complement negate. C set if result ≠ 0 |
-| **MUL**  | 0xD   | `dst ← dst × src` (planned) | TBD | Unsigned multiplication (planned) |
-| **DIV**  | 0xE   | `dst ← dst ÷ src` (planned) | TBD | Unsigned division (planned) |
-| **reserved** | 0xF | — | — | Reserved for future use |
+| **ADC**  | 0x1   | `dst ← dst + src + C` | Z, C, S | Add with carry — includes the Carry flag as an input. Used for multi-word addition |
+| **SUB**  | 0x2   | `dst ← dst - src` | Z, C, S | Integer subtraction. C set on unsigned borrow (src > dst) |
+| **SBB**  | 0x3   | `dst ← dst - src - C` | Z, C, S | Subtract with borrow — includes the Carry flag as a borrow input |
+| **CMP**  | 0x4   | `dst - src` (flags only) | Z, C, S | Compare — subtract without storing result. Sets flags for conditional jumps |
+| **TEST** | 0x5   | `dst & src` (flags only) | Z, S | Bitwise AND test — result discarded, flags only. C cleared |
+| **AND**  | 0x6   | `dst ← dst & src` | Z, S | Bitwise AND. C cleared |
+| **OR**   | 0x7   | `dst ← dst \| src` | Z, S | Bitwise OR. C cleared |
+| **XOR**  | 0x8   | `dst ← dst ^ src` | Z, S | Bitwise exclusive OR. C cleared |
+| **SHL**  | 0x9   | `dst ← dst << src` | Z, C, S | Shift left logical. C = last bit shifted out of MSB |
+| **SHR**  | 0xA   | `dst ← dst >> src` | Z, C, S | Shift right logical. C = last bit shifted out of LSB |
+| **INC**  | 0xB   | `dst ← dst + 1` | Z, S | Increment. Does NOT affect Carry flag |
+| **DEC**  | 0xC   | `dst ← dst - 1` | Z, S | Decrement. Does NOT affect Carry flag |
+| **NOT**  | 0xD   | `dst ← ~dst` | None | Bitwise complement (one's complement). No flags affected |
+| **NEG**  | 0xE   | `dst ← 0 - dst` | Z, C, S | Two's complement negate. C set if result ≠ 0 |
+| **XCHG** | 0xF   | Swap `dst` and `src` | None | Exchange values between two registers. No flags affected |
 
 ---
 
@@ -225,10 +225,46 @@ sequenceDiagram
 
 ---
 
-#### SUB — Integer Subtraction (ALU sub-op 0x1)
+---
+
+#### ADC — Add with Carry (ALU sub-op 0x1)
+
+**Mnemonic:** `ADC`  
+**AluOp:** `0001` (0x1)  
+**Operands:** `dst, src`  
+**Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
+
+| Aspect | Detail |
+|--------|--------|
+| **Operation** | `dst ← dst + src + C` |
+| **Flags affected** | Z (set if result is 0), C (set on carry out), S (set if MSB is 1) |
+| **Cycles** | 1 (reg-reg), 1 (reg-imm) |
+
+**Description:**
+
+ADC performs addition with an incoming carry flag. The operation is `dst + src + C`, where C is the current value of the Carry flag. This enables multi-word arithmetic — after adding the low words with ADD (which sets C), ADC chains subsequent words with the carry included.
+
+**Multi-word addition with ADC:**
+
+```mermaid
+sequenceDiagram
+    participant ALU as ALU
+    participant F as FLAGS
+    participant AX as AX (low word)
+    participant DX as DX (high word)
+
+    Note over AX,DX: a = (DX:AX), b = (high:CX)
+    ALU->>AX: ADD AX, CX (C set if carry out)
+    ALU->>DX: ADC DX, b_high (includes carry from ADD)
+    Note over AX,DX: Result in DX:AX, 32-bit addition in 2 cycles
+```
+
+---
+
+#### SUB — Integer Subtraction (ALU sub-op 0x2)
 
 **Mnemonic:** `SUB`  
-**AluOp:** `0001` (0x1)  
+**AluOp:** `0010` (0x2)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -250,10 +286,44 @@ The carry flag acts as a **borrow flag** for subtraction: it is SET when the sou
 
 ---
 
-#### AND — Bitwise AND (ALU sub-op 0x4)
+#### SBB — Subtract with Borrow (ALU sub-op 0x3)
+
+**Mnemonic:** `SBB`  
+**AluOp:** `0011` (0x3)  
+**Operands:** `dst, src`  
+**Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
+
+| Aspect | Detail |
+|--------|--------|
+| **Operation** | `dst ← dst - src - C` |
+| **Flags affected** | Z (set if result is 0), C (set on unsigned borrow), S (set if MSB is 1) |
+| **Cycles** | 1 (reg-reg), 1 (reg-imm) |
+
+**Description:**
+
+SBB performs subtraction with an incoming borrow from the Carry flag. The operation is `dst - src - C`, where C is the current value of the Carry flag. This enables multi-word subtraction — after subtracting low words with SUB (which sets C on borrow), SBB chains subsequent words with the borrow included.
+
+**Multi-word subtraction with SBB:**
+
+```mermaid
+sequenceDiagram
+    participant ALU as ALU
+    participant F as FLAGS
+    participant AX as AX (low word)
+    participant DX as DX (high word)
+
+    Note over AX,DX: a = (DX:AX), b = (high:CX)
+    ALU->>AX: SUB AX, CX (C set if borrow)
+    ALU->>DX: SBB DX, b_high (includes borrow from SUB)
+    Note over AX,DX: Result in DX:AX, 32-bit subtraction in 2 cycles
+```
+
+---
+
+#### AND — Bitwise AND (ALU sub-op 0x6)
 
 **Mnemonic:** `AND`  
-**AluOp:** `0100` (0x4)  
+**AluOp:** `0110` (0x6)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -275,10 +345,10 @@ AND performs a bitwise logical AND of the destination and source operands. Each 
 
 ---
 
-#### OR — Bitwise OR (ALU sub-op 0x5)
+#### OR — Bitwise OR (ALU sub-op 0x7)
 
 **Mnemonic:** `OR`  
-**AluOp:** `0101` (0x5)  
+**AluOp:** `0111` (0x7)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -300,10 +370,10 @@ OR performs a bitwise logical OR. Each bit of the result is 1 if at least one of
 
 ---
 
-#### XOR — Bitwise Exclusive OR (ALU sub-op 0x6)
+#### XOR — Bitwise Exclusive OR (ALU sub-op 0x8)
 
 **Mnemonic:** `XOR`  
-**AluOp:** `0110` (0x6)  
+**AluOp:** `1000` (0x8)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -325,10 +395,10 @@ XOR performs a bitwise exclusive OR. Each bit of the result is 1 if exactly one 
 
 ---
 
-#### SHL — Shift Left Logical (ALU sub-op 0x7)
+#### SHL — Shift Left Logical (ALU sub-op 0x9)
 
 **Mnemonic:** `SHL`  
-**AluOp:** `0111` (0x7)  
+**AluOp:** `1001` (0x9)  
 **Operands:** `dst, count`  
 **Format:** 16-bit (reg-reg, count in src register) or 32-bit (reg-imm, count as immediate)
 
@@ -358,10 +428,10 @@ For multi-bit shifts, the carry flag contains the value of the bit that was shif
 
 ---
 
-#### SHR — Shift Right Logical (ALU sub-op 0x8)
+#### SHR — Shift Right Logical (ALU sub-op 0xA)
 
 **Mnemonic:** `SHR`  
-**AluOp:** `1000` (0x8)  
+**AluOp:** `1010` (0xA)  
 **Operands:** `dst, count`  
 **Format:** 16-bit (reg-reg, count in src register) or 32-bit (reg-imm, count as immediate)
 
@@ -381,10 +451,10 @@ SHR shifts all bits of the destination register to the right by the count value 
 
 ---
 
-#### INC — Increment (ALU sub-op 0x9)
+#### INC — Increment (ALU sub-op 0xB)
 
 **Mnemonic:** `INC`  
-**AluOp:** `1001` (0x9)  
+**AluOp:** `1011` (0xB)  
 **Operands:** `dst`  
 **Format:** 16-bit (src register ignored for this operation)
 
@@ -400,10 +470,10 @@ INC adds 1 to the destination register. Unlike ADD, INC does **not** affect the 
 
 ---
 
-#### DEC — Decrement (ALU sub-op 0xA)
+#### DEC — Decrement (ALU sub-op 0xC)
 
 **Mnemonic:** `DEC`  
-**AluOp:** `1010` (0xA)  
+**AluOp:** `1100` (0xC)  
 **Operands:** `dst`  
 **Format:** 16-bit (src register ignored for this operation)
 
@@ -419,10 +489,10 @@ DEC subtracts 1 from the destination register. Like INC, DEC does **not** affect
 
 ---
 
-#### CMP — Compare (ALU sub-op 0x2)
+#### CMP — Compare (ALU sub-op 0x4)
 
 **Mnemonic:** `CMP`  
-**AluOp:** `0010` (0x2)  
+**AluOp:** `0100` (0x4)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -446,10 +516,10 @@ CMP performs the same subtraction as SUB but discards the result. Only the flags
 
 ---
 
-#### TEST — Bitwise Test (ALU sub-op 0x3)
+#### TEST — Bitwise Test (ALU sub-op 0x5)
 
 **Mnemonic:** `TEST`  
-**AluOp:** `0011` (0x3)  
+**AluOp:** `0101` (0x5)  
 **Operands:** `dst, src`  
 **Format:** 16-bit (reg-reg) or 32-bit (reg-imm)
 
@@ -472,10 +542,10 @@ TEST performs the same bitwise AND operation but discards the result. Only the f
 
 ---
 
-#### NOT — Bitwise Complement (ALU sub-op 0xB)
+#### NOT — Bitwise Complement (ALU sub-op 0xD)
 
 **Mnemonic:** `NOT`  
-**AluOp:** `1011` (0xB)  
+**AluOp:** `1101` (0xD)  
 **Operands:** `dst`  
 **Format:** 16-bit
 
@@ -491,10 +561,10 @@ NOT performs a bitwise one's complement of the destination register. Every 0 bit
 
 ---
 
-#### NEG — Two's Complement Negate (ALU sub-op 0xC)
+#### NEG — Two's Complement Negate (ALU sub-op 0xE)
 
 **Mnemonic:** `NEG`  
-**AluOp:** `1100` (0xC)  
+**AluOp:** `1110` (0xE)  
 **Operands:** `dst`  
 **Format:** 16-bit
 
@@ -510,41 +580,22 @@ NEG computes the two's complement negation of the destination register. This is 
 
 ---
 
-#### MUL — Multiply (ALU sub-op 0xD, planned)
+#### XCHG — Exchange Registers (ALU sub-op 0xF)
 
-**Mnemonic:** `MUL`  
-**AluOp:** `1101` (0xD)  
+**Mnemonic:** `XCHG`  
+**AluOp:** `1111` (0xF)  
 **Operands:** `dst, src`  
-**Format:** TBD
+**Format:** 16-bit (reg-reg)
 
 | Aspect | Detail |
 |--------|--------|
-| **Operation** | `dst ← dst × src` (planned) |
-| **Flags affected** | TBD |
-| **Cycles** | TBD |
+| **Operation** | Swap `dst` and `src` |
+| **Flags affected** | None |
+| **Cycles** | 1 |
 
 **Description:**
 
-MUL will perform unsigned multiplication of the destination and source operands. Details are pending implementation.
-
----
-
-#### DIV — Divide (ALU sub-op 0xE, planned)
-
-**Mnemonic:** `DIV`  
-**AluOp:** `1110` (0xE)  
-**Operands:** `dst, src`  
-**Format:** TBD
-
-| Aspect | Detail |
-|--------|--------|
-| **Operation** | `dst ← dst ÷ src` (planned) |
-| **Flags affected** | TBD |
-| **Cycles** | TBD |
-
-**Description:**
-
-DIV will perform unsigned division of the destination by the source operand. Details are pending implementation.
+XCHG exchanges the values of two registers atomically. After execution, the destination register contains the original value of the source register, and vice versa. No flags are affected. This is useful for implementing swap operations, sorting, and register allocation. It is the only ALU operation that modifies both operand registers.
 
 ---
 
@@ -1060,7 +1111,9 @@ HLT is used at the end of the operating system idle loop or after a fatal error.
 | PUSH        | — | — | — | No flags affected |
 | POP         | — | — | — | No flags affected |
 | **ALU ADD** | ✓ | ✓ | ✓ | C = unsigned overflow |
+| **ALU ADC** | ✓ | ✓ | ✓ | C = unsigned overflow (includes carry in) |
 | **ALU SUB** | ✓ | ✓ | ✓ | C = unsigned borrow (src > dst) |
+| **ALU SBB** | ✓ | ✓ | ✓ | C = unsigned borrow (includes borrow in) |
 | **ALU CMP** | ✓ | ✓ | ✓ | Same as SUB, result discarded |
 | **ALU TEST**| ✓ | — | ✓ | C cleared |
 | **ALU AND** | ✓ | — | ✓ | C cleared |
@@ -1072,8 +1125,7 @@ HLT is used at the end of the operating system idle loop or after a fatal error.
 | **ALU DEC** | ✓ | — | ✓ | C unchanged |
 | **ALU NOT** | — | — | — | No flags affected |
 | **ALU NEG** | ✓ | ✓ | ✓ | C set if result != 0 |
-| **ALU MUL** | TBD | TBD | TBD | Planned |
-| **ALU DIV** | TBD | TBD | TBD | Planned |
+| **ALU XCHG**| — | — | — | No flags affected |
 | JZ          | — | — | — | Tests Z, does not modify it |
 | JNZ         | — | — | — | Tests Z, does not modify it |
 | JC          | — | — | — | Tests C, does not modify it |
@@ -1081,7 +1133,7 @@ HLT is used at the end of the operating system idle loop or after a fatal error.
 | JS          | — | — | — | Tests S, does not modify it |
 | JNS         | — | — | — | Tests S, does not modify it |
 
-**Legend:** ✓ = modified, — = unchanged, TBD = to be determined
+**Legend:** ✓ = modified, — = unchanged
 
 ---
 
@@ -1109,4 +1161,4 @@ All timing values assume single-phase clock with no wait states. Actual cycle co
 
 ---
 
-*This document describes the complete base instruction set of the NovumOS-16bit CPU. Future extensions may add additional instructions through the undefined opcode space (0xD–0xF).*
+*This document describes the complete base instruction set of the NovumOS-16bit CPU.*

@@ -35,10 +35,11 @@ pub const Disassembler = struct {
 
     fn aluName(op: ISA.AluOp) []const u8 {
         return switch (op) {
-            .ADD => "ADD", .SUB => "SUB", .CMP => "CMP", .TEST => "TEST",
+            .ADD => "ADD", .ADC => "ADC", .SUB => "SUB", .SBB => "SBB",
+            .CMP => "CMP", .TEST => "TEST",
             .AND => "AND", .OR => "OR", .XOR => "XOR", .SHL => "SHL",
             .SHR => "SHR", .INC => "INC", .DEC => "DEC", .NOT => "NOT",
-            .NEG => "NEG",
+            .NEG => "NEG", .XCHG => "XCHG",
         };
     }
 
