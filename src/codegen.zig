@@ -52,11 +52,11 @@ pub const Opcode = enum(u4) {
 /// Physical TTL ALU encoding — matches the 16-operation TTL ALU chip design.
 pub const AluOp = enum(u4) {
     ADD  = 0b0000,   // dst = dst + src, set Carry on overflow
-    ADC  = 0b0001,   // dst = dst + src + carry, set Carry on overflow
-    SUB  = 0b0010,   // dst = dst - src, set Carry on borrow
-    SBB  = 0b0011,   // dst = dst - src - carry, set Carry on borrow
-    CMP  = 0b0100,   // Compare (subtract without storing result)
-    TEST = 0b0101,   // Bitwise AND (result discarded, flags only)
+    SUB  = 0b0001,   // dst = dst - src, set Carry on borrow
+    CMP  = 0b0010,   // Compare (subtract without storing result)
+    TEST = 0b0011,   // Bitwise AND (result discarded, flags only)
+    ADC  = 0b0100,   // dst = dst + src + carry, set Carry on overflow
+    SBB  = 0b0101,   // dst = dst - src - carry, set Carry on borrow
     AND  = 0b0110,   // dst = dst AND src
     OR   = 0b0111,   // dst = dst OR src
     XOR  = 0b1000,   // dst = dst XOR src

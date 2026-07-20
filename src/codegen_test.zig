@@ -144,38 +144,38 @@ test "encodeAlu ADD AX, BX" {
 }
 
 test "encodeAlu ADC AX, BX" {
-    // ALU=0xA, ADC=1, dst=AX(0), src=BX(1)
-    // 1010 0001 00 01 0000 = 0xA110
-    const inst = encodeAlu(.ADC, .AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA110), inst);
-}
-
-test "encodeAlu SUB BX, AX" {
-    // ALU=0xA, SUB=2, dst=BX(1), src=AX(0)
-    // 1010 0010 01 00 0000 = 0xA240
-    const inst = encodeAlu(.SUB, .BX, .AX);
-    try std.testing.expectEqual(@as(u16, 0xA240), inst);
-}
-
-test "encodeAlu SBB BX, AX" {
-    // ALU=0xA, SBB=3, dst=BX(1), src=AX(0)
-    // 1010 0011 01 00 0000 = 0xA340
-    const inst = encodeAlu(.SBB, .BX, .AX);
-    try std.testing.expectEqual(@as(u16, 0xA340), inst);
-}
-
-test "encodeAlu CMP AX, BX" {
-    // ALU=0xA, CMP=4, dst=AX(0), src=BX(1)
+    // ALU=0xA, ADC=4, dst=AX(0), src=BX(1)
     // 1010 0100 00 01 0000 = 0xA410
-    const inst = encodeAlu(.CMP, .AX, .BX);
+    const inst = encodeAlu(.ADC, .AX, .BX);
     try std.testing.expectEqual(@as(u16, 0xA410), inst);
 }
 
+test "encodeAlu SUB BX, AX" {
+    // ALU=0xA, SUB=1, dst=BX(1), src=AX(0)
+    // 1010 0001 01 00 0000 = 0xA140
+    const inst = encodeAlu(.SUB, .BX, .AX);
+    try std.testing.expectEqual(@as(u16, 0xA140), inst);
+}
+
+test "encodeAlu SBB BX, AX" {
+    // ALU=0xA, SBB=5, dst=BX(1), src=AX(0)
+    // 1010 0101 01 00 0000 = 0xA540
+    const inst = encodeAlu(.SBB, .BX, .AX);
+    try std.testing.expectEqual(@as(u16, 0xA540), inst);
+}
+
+test "encodeAlu CMP AX, BX" {
+    // ALU=0xA, CMP=2, dst=AX(0), src=BX(1)
+    // 1010 0010 00 01 0000 = 0xA210
+    const inst = encodeAlu(.CMP, .AX, .BX);
+    try std.testing.expectEqual(@as(u16, 0xA210), inst);
+}
+
 test "encodeAlu TEST AX, BX" {
-    // ALU=0xA, TEST=5, dst=AX(0), src=BX(1)
-    // 1010 0101 00 01 0000 = 0xA510
+    // ALU=0xA, TEST=3, dst=AX(0), src=BX(1)
+    // 1010 0011 00 01 0000 = 0xA310
     const inst = encodeAlu(.TEST, .AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA510), inst);
+    try std.testing.expectEqual(@as(u16, 0xA310), inst);
 }
 
 test "encodeAlu AND AX, BX" {

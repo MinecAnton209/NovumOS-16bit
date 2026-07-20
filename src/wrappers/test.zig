@@ -43,22 +43,22 @@ test "add generates correct u16" {
 
 test "adc generates correct u16" {
     const result = asm_.adc(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA110), result);
+    try std.testing.expectEqual(@as(u16, 0xA410), result);
 }
 
 test "sub generates correct u16" {
     const result = asm_.sub(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA210), result);
+    try std.testing.expectEqual(@as(u16, 0xA110), result);
 }
 
 test "sbb generates correct u16" {
     const result = asm_.sbb(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA310), result);
+    try std.testing.expectEqual(@as(u16, 0xA510), result);
 }
 
 test "cmp generates correct u16" {
     const result = asm_.cmp(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA410), result);
+    try std.testing.expectEqual(@as(u16, 0xA210), result);
 }
 
 test "and generates correct u16" {
@@ -108,7 +108,7 @@ test "neg generates correct u16" {
 
 test "test generates correct u16" {
     const result = asm_.test_(.AX, .BX);
-    try std.testing.expectEqual(@as(u16, 0xA510), result);
+    try std.testing.expectEqual(@as(u16, 0xA310), result);
 }
 
 test "xchg generates correct u16" {
