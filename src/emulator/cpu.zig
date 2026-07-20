@@ -106,11 +106,12 @@ pub const CPU = struct {
     //
     // Port | Peripheral | Direction | Description
     // -----+------------+-----------+----------------------------------
-    // 0x00 | UART       | R/W       | Terminal I/O (legacy, IN=rx, OUT=tx)
-    // 0x01 | Timer      | Read      | Cycle counter (low 16 bits)
+    // 0x00 | UART data  | R/W       | Terminal I/O (IN=rx, OUT=tx)
+    // 0x01 | UART status| Read      | Bit 0=RX Ready, Bit 1=TX Empty
     // 0x02 | Keyboard   | Read      | Scan code (0 if empty, legacy)
     // 0x03 | Line stat  | Read      | Command ID (0=none, 1-6=cmd, 7=unknown)
     // 0x04 | Line read  | Read      | Next byte from line buffer (0=empty)
+    // 0x05 | Timer      | Read      | Cycle counter (low 16 bits)
     // 0x10 | VGA        | Write     | Character output (char in low byte)
     // 0x11 | VGA ctrl   | Write     | Control: 0x0001=clear, 0x0002=flush
 
@@ -142,14 +143,33 @@ pub const CPU = struct {
     /// Read a 16-bit word from memory (little-endian byte order).
     /// addr = address of the low byte; high byte is at addr+1.
     /// Address wraps around modulo 64K (addr+1 & 0xFFFF).
+    ///
+    /// VGA memory-mapped window at 0xE000–0xEF9F (2000 words × 2 bytes).
+    /// Reads in this range are redirected to the VGA text buffer.
     pub fn readWord(self: *CPU, addr: u16) u16 {
+        // VGA memory-mapped window: 0xE000–0xEF9E (word-aligned)
+        if (addr >= 0xE000 and addr <= 0xEF9E) {
+            const idx = (addr - 0xE000) >> 1;
+            return self.vga_buffer[idx];
+        }
         const lo: u16 = self.memory[addr];
         const hi: u16 = self.memory[@intCast(@as(u32, addr) +% 1 & 0xFFFF)];
         return lo | (hi << 8);
     }
 
     /// Write a 16-bit word to memory (little-endian byte order).
+    ///
+    /// VGA memory-mapped window at 0xE000–0xEF9F (2000 words × 2 bytes).
+    /// Writes in this range are redirected to the VGA text buffer
+    /// and mark the display as dirty for re-rendering.
     pub fn writeWord(self: *CPU, addr: u16, value: u16) void {
+        // VGA memory-mapped window: 0xE000–0xEF9E (word-aligned)
+        if (addr >= 0xE000 and addr <= 0xEF9E) {
+            const idx = (addr - 0xE000) >> 1;
+            self.vga_buffer[idx] = value;
+            self.vga_dirty = true;
+            return;
+        }
         self.memory[addr] = @intCast(value & 0xFF);
         self.memory[@intCast(@as(u32, addr) +% 1 & 0xFFFF)] = @intCast((value >> 8) & 0xFF);
     }
@@ -389,15 +409,20 @@ pub const CPU = struct {
     /// Routes to special peripheral ports or generic io_ports[].
     pub fn readPort(self: *CPU, port: u16) u16 {
         return switch (port) {
-            // --- UART (port 0x00) — read char from terminal input buffer ---
+            // --- UART data (port 0x00) — read char from terminal input buffer ---
             0x00 => if (self.uart_rx_head != self.uart_rx_tail) blk: {
                 const ch = self.uart_rx[self.uart_rx_tail];
                 self.uart_rx_tail +%= 1;
                 break :blk @intCast(ch);
             } else 0,
 
-            // --- Timer (port 0x01) — read current tick counter ---
-            0x01 => @truncate(self.cycle_count & 0xFFFF),
+            // --- UART status (port 0x01) — read UART status flags ---
+            0x01 => blk: {
+                var status: u16 = 0;
+                if (self.uart_rx_head != self.uart_rx_tail) status |= 0x0001; // RX Ready
+                if (self.uart_tx_head == self.uart_tx_tail) status |= 0x0002; // TX Empty
+                break :blk status;
+            },
 
             // --- Keyboard (port 0x02) — read scan code ---
             0x02 => if (self.kbd_head != self.kbd_tail) blk: {
@@ -420,6 +445,9 @@ pub const CPU = struct {
                 break :blk ch;
             } else 0,
 
+            // --- Timer (port 0x05) — read current tick counter ---
+            0x05 => @truncate(self.cycle_count & 0xFFFF),
+
             // Generic I/O port (0-255)
             else => if (port <= 0xFF) self.io_ports[port] else 0,
         };
@@ -438,7 +466,7 @@ pub const CPU = struct {
             // --- VGA control (port 0x11) ---
             0x11 => self.vgaControl(value),
 
-            // Timer and Keyboard are read-only — writes ignored
+            // UART status (0x01), Keyboard (0x02), Line (0x03/0x04), Timer (0x05) are read-only — writes ignored
 
             // Generic I/O port (0-255)
             else => {

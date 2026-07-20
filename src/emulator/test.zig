@@ -585,13 +585,44 @@ test "UART: read empty returns 0" {
     try std.testing.expectEqual(@as(u16, 0), cpu.ax);
 }
 
-// Timer reads cycle count (port 0x01).
+// UART status (port 0x01) returns RX Ready bit when data is available.
+test "UART status: RX Ready set when data available" {
+    var cpu = CPU{};
+    cpu.uart_rx[0] = 'A';
+    cpu.uart_rx_head = 1;
+    const status = cpu.readPort(0x01);
+    try std.testing.expect(status & 0x0001 != 0);
+}
+
+// UART status (port 0x01) returns RX Ready = 0 when RX buffer is empty.
+test "UART status: RX Ready clear when empty" {
+    var cpu = CPU{};
+    const status = cpu.readPort(0x01);
+    try std.testing.expectEqual(@as(u16, 0), status & 0x0001);
+}
+
+// UART status (port 0x01) returns TX Empty bit when TX buffer is empty.
+test "UART status: TX Empty set when no data pending" {
+    var cpu = CPU{};
+    const status = cpu.readPort(0x01);
+    try std.testing.expect(status & 0x0002 != 0);
+}
+
+// UART status (port 0x01) returns TX Empty = 0 when TX buffer has data.
+test "UART status: TX Empty clear when data pending" {
+    var cpu = CPU{};
+    cpu.uartWriteData('H');
+    const status = cpu.readPort(0x01);
+    try std.testing.expectEqual(@as(u16, 0), status & 0x0002);
+}
+
+// Timer reads cycle count (port 0x05).
 test "Timer: read cycle count" {
     var cpu = CPU{};
     cpu.cycle_count = 0x1234;
 
-    // IN AX, 0x01 — read timer
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0001));
+    // IN AX, 0x05 — read timer
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0005));
 
     try cpu.step();
     try std.testing.expectEqual(@as(u16, 0x1234), cpu.ax);
@@ -1622,6 +1653,52 @@ test "VGA: control flush sets dirty" {
     cpu.vgaControl(0x0002);
 
     try std.testing.expectEqual(true, cpu.vga_dirty);
+}
+
+// VGA memory-mapped window at 0xE000: write to VGA buffer via writeWord.
+test "VGA: memory-mapped write at 0xE000" {
+    var cpu = CPU{};
+    cpu.writeWord(0xE000, 0x0741); // 'A' with attr 0x07 at word 0
+    try std.testing.expectEqual(@as(u16, 0x0741), cpu.vga_buffer[0]);
+    try std.testing.expectEqual(true, cpu.vga_dirty);
+}
+
+// VGA memory-mapped window: read back from VGA buffer via readWord.
+test "VGA: memory-mapped read at 0xE000" {
+    var cpu = CPU{};
+    cpu.vga_buffer[0] = 0x0741;
+    const val = cpu.readWord(0xE000);
+    try std.testing.expectEqual(@as(u16, 0x0741), val);
+}
+
+// VGA memory-mapped window: multiple words at different offsets.
+test "VGA: memory-mapped write at offset 0x004" {
+    var cpu = CPU{};
+    cpu.writeWord(0xE004, 0x0742); // 'B' with attr 0x07 at word 2
+    try std.testing.expectEqual(@as(u16, 0x0742), cpu.vga_buffer[2]);
+}
+
+// VGA memory-mapped window: last word (0xEF9E = 1999 words × 2).
+test "VGA: memory-mapped last word" {
+    var cpu = CPU{};
+    cpu.writeWord(0xEF9E, 0x0758);
+    try std.testing.expectEqual(@as(u16, 0x0758), cpu.vga_buffer[1999]);
+}
+
+// VGA memory-mapped window: RAM below 0xE000 is unaffected.
+test "VGA: memory writes below window reach RAM" {
+    var cpu = CPU{};
+    cpu.writeWord(0xDFFE, 0x1234);
+    try std.testing.expectEqual(@as(u8, 0x34), cpu.memory[0xDFFE]);
+    try std.testing.expectEqual(@as(u8, 0x12), cpu.memory[0xDFFF]);
+}
+
+// VGA memory-mapped window: RAM above window still accessible.
+test "VGA: memory writes above window reach RAM" {
+    var cpu = CPU{};
+    cpu.writeWord(0xEFA0, 0x5678);
+    try std.testing.expectEqual(@as(u8, 0x78), cpu.memory[0xEFA0]);
+    try std.testing.expectEqual(@as(u8, 0x56), cpu.memory[0xEFA1]);
 }
 
 // vgaPutChar mirrors every character to the UART TX buffer.
@@ -3695,7 +3772,7 @@ test "writePort port > 0xFF is no-op" {
 test "IN from timer port via step" {
     var cpu = CPU{};
     cpu.cycle_count = 0xABCD;
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0001));
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0005));
     try cpu.step();
     try std.testing.expectEqual(@as(u16, 0xABCD), cpu.ax);
 }
@@ -3703,7 +3780,7 @@ test "IN from timer port via step" {
 test "OUT to timer port ignored" {
     var cpu = CPU{};
     cpu.ax = 0x1234;
-    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0001));
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0005));
     try cpu.step();
 }
 
@@ -3721,6 +3798,15 @@ test "OUT to keyboard port ignored" {
     cpu.ax = 0x5678;
     writeInstruction32(&cpu.memory, 0, ISA.encode32(.OUT, .AX, 0x0002));
     try cpu.step();
+}
+
+test "UART status via IN instruction" {
+    var cpu = CPU{};
+    // TX should be empty initially
+    writeInstruction32(&cpu.memory, 0, ISA.encode32(.IN, .AX, 0x0001));
+    try cpu.step();
+    try std.testing.expect(cpu.ax & 0x0002 != 0); // TX Empty
+    try std.testing.expectEqual(@as(u16, 0), cpu.ax & 0x0001); // RX empty
 }
 
 test "OUT 0x11 with unsupported value" {
@@ -3769,10 +3855,10 @@ test "flushUartTx: CRLF sequence" {
 // Additional Peripheral Edge Case Tests
 // =============================================================================
 
-test "Generic I/O port 0x05: write then read" {
+test "Generic I/O port 0x06: write then read" {
     var cpu = CPU{};
-    cpu.writePort(5, 0xABCD);
-    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.readPort(5));
+    cpu.writePort(6, 0xABCD);
+    try std.testing.expectEqual(@as(u16, 0xABCD), cpu.readPort(6));
 }
 
 test "Generic I/O port 0xFF: boundary" {
@@ -3786,13 +3872,13 @@ test "Timer: IN reads cycle_count" {
     try cpu.step();
     try cpu.step();
     try cpu.step();
-    try std.testing.expectEqual(@as(u16, @truncate(cpu.cycle_count & 0xFFFF)), cpu.readPort(0x01));
+    try std.testing.expectEqual(@as(u16, @truncate(cpu.cycle_count & 0xFFFF)), cpu.readPort(0x05));
 }
 
 test "Timer: read via IN instruction" {
     var cpu = CPU{};
     writeInstruction32(&cpu.memory, 0, ISA.encode32(.MOV, .BX, 0x1234));
-    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x0001));
+    writeInstruction32(&cpu.memory, 4, ISA.encode32(.IN, .AX, 0x0005));
     try cpu.step();
     try cpu.step();
     try std.testing.expectEqual(@as(u16, @truncate(cpu.cycle_count & 0xFFFF)), cpu.ax);

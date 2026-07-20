@@ -2,4 +2,5 @@
 zig-out/
 build/
 .opencode/
+.claude/
 *.o
